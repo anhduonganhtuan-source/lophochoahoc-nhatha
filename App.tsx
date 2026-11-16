@@ -760,7 +760,6 @@ const safeSetStorage = (key, val) => {
     return false;
   }
 };
-
 // Lọc bỏ chuỗi Base64 nặng để tạo bản sao siêu nhẹ (<200KB), đảm bảo Lớp & Học sinh luôn lưu được vào localStorage
 const stripHeavyBase64 = (dataObj) => {
   if (!dataObj || typeof dataObj !== "object") return dataObj;
