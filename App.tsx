@@ -755,8 +755,96 @@ const safeGetStorage = (key, fallback = null) => {
 const safeSetStorage = (key, val) => {
   try {
     localStorage.setItem(key, val);
+    return true;
   } catch (e) {
-    // Ignore storage quota or sandbox errors
+    return false;
+  }
+};
+
+// Lọc bỏ chuỗi Base64 nặng để tạo bản sao siêu nhẹ (<200KB), đảm bảo Lớp & Học sinh luôn lưu được vào localStorage
+const stripHeavyBase64 = (dataObj) => {
+  if (!dataObj || typeof dataObj !== "object") return dataObj;
+  return {
+    ...dataObj,
+    classes: (dataObj.classes || []).map((c) => ({
+      ...c,
+      todayCustomDocDataUrl: "",
+    })),
+    documents: (dataObj.documents || []).map((d) => ({
+      ...d,
+      fileDataUrl: "",
+    })),
+    homeworks: (dataObj.homeworks || []).map((h) => ({
+      ...h,
+      fileDataUrl: "",
+    })),
+    homeworkSubmissions: (dataObj.homeworkSubmissions || []).map((s) => ({
+      ...s,
+      fileDataUrl: "",
+    })),
+    examPapers: (dataObj.examPapers || []).map((ex) => ({
+      ...ex,
+      fileDataUrl: "",
+    })),
+    announcements: (dataObj.announcements || []).map((a) => ({
+      ...a,
+      attachmentDataUrl: "",
+    })),
+    chemFeedPosts: (dataObj.chemFeedPosts || []).map((p) => ({
+      ...p,
+      imageDataUrl: "",
+      comments: (p.comments || []).map((cm) => ({
+        ...cm,
+        attachmentDataUrl: "",
+      })),
+    })),
+  };
+};
+
+// Lưu trữ tầng sâu bằng IndexedDB (Dung lượng hàng trăm MB, không bị giới hạn 5MB như localStorage)
+const IDB_NAME = "NhatHaClassroomDB_v8";
+const IDB_STORE = "app_state";
+
+const saveToIndexedDB = (dataObj) => {
+  try {
+    if (typeof window === "undefined" || !window.indexedDB) return;
+    const req = window.indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE);
+      }
+    };
+    req.onsuccess = (e) => {
+      const db = e.target.result;
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).put(dataObj, "latest");
+    };
+  } catch (err) {
+    // Ignore IDB sandbox errors
+  }
+};
+
+const loadFromIndexedDB = (callback) => {
+  try {
+    if (typeof window === "undefined" || !window.indexedDB) return;
+    const req = window.indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE);
+      }
+    };
+    req.onsuccess = (e) => {
+      const db = e.target.result;
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const getReq = tx.objectStore(IDB_STORE).get("latest");
+      getReq.onsuccess = () => {
+        if (getReq.result) callback(getReq.result);
+      };
+    };
+  } catch (err) {
+    // Ignore IDB sandbox errors
   }
 };
 
@@ -830,40 +918,78 @@ export default function App() {
   const [lastSyncTime, setLastSyncTime] = useState("");
   const [showCloudModal, setShowCloudModal] = useState(false);
 
-  const [appData, setAppData] = useState(() => {
-    const local = safeGetStorage("data_nhatha_classroom_v8", null);
-    if (local) {
-      try {
-        const parsed = JSON.parse(local);
-        return {
-          ...INITIAL_STATE,
-          ...parsed,
-          academicYears:
-            parsed.academicYears && parsed.academicYears.length > 0
-              ? parsed.academicYears
-              : DEFAULT_ACADEMIC_YEARS,
-          currentAcademicYear:
-            parsed.currentAcademicYear || INITIAL_STATE.currentAcademicYear,
-          curriculum: parsed.curriculum || DEFAULT_CURRICULUM,
-          timeSlots:
-            parsed.timeSlots && parsed.timeSlots.length > 0
-              ? parsed.timeSlots
-              : DEFAULT_TIME_SLOTS,
-          homeworks: parsed.homeworks || [],
-          homeworkSubmissions: parsed.homeworkSubmissions || [],
-          customFlashcards: parsed.customFlashcards || [],
-          attendanceSessions: parsed.attendanceSessions || [],
-          classes: parsed.classes || [],
-          achievements: (parsed.achievements || []).filter(
-            (a) => !String(a.id || "").startsWith("ACH_SAMPLE_")
-          ),
-        };
-      } catch (e) {
-        return INITIAL_STATE;
-      }
-    }
-    return INITIAL_STATE;
+  const normalizeLoadedData = (parsed) => ({
+    ...INITIAL_STATE,
+    ...parsed,
+    teacherPassword: parsed?.teacherPassword || TEACHER_INFO.defaultPass,
+    academicYears:
+      parsed?.academicYears && parsed.academicYears.length > 0
+        ? parsed.academicYears
+        : DEFAULT_ACADEMIC_YEARS,
+    currentAcademicYear:
+      parsed?.currentAcademicYear || INITIAL_STATE.currentAcademicYear,
+    curriculum: parsed?.curriculum || DEFAULT_CURRICULUM,
+    timeSlots:
+      parsed?.timeSlots && parsed.timeSlots.length > 0
+        ? parsed.timeSlots
+        : DEFAULT_TIME_SLOTS,
+    homeworks: parsed?.homeworks || [],
+    homeworkSubmissions: parsed?.homeworkSubmissions || [],
+    customFlashcards: parsed?.customFlashcards || [],
+    attendanceSessions: parsed?.attendanceSessions || [],
+    classes: parsed?.classes || [],
+    students: parsed?.students || [],
+    announcements: parsed?.announcements || [],
+    calendarEvents: parsed?.calendarEvents || [],
+    documents: parsed?.documents || [],
+    examPapers: parsed?.examPapers || [],
+    examSubmissions: parsed?.examSubmissions || [],
+    sosQuestions: parsed?.sosQuestions || [],
+    chemFeedPosts: parsed?.chemFeedPosts || [],
+    achievements: (parsed?.achievements || []).filter(
+      (a) => !String(a.id || "").startsWith("ACH_SAMPLE_")
+    ),
   });
+
+  const [appData, setAppData] = useState(() => {
+    const fullLocal = safeGetStorage("data_nhatha_classroom_v8", null);
+    const coreLocal = safeGetStorage("data_nhatha_core_v8", null);
+    let bestData = null;
+
+    if (fullLocal) {
+      try {
+        bestData = JSON.parse(fullLocal);
+      } catch (e) {}
+    }
+    if (coreLocal) {
+      try {
+        const parsedCore = JSON.parse(coreLocal);
+        if (
+          !bestData ||
+          Number(parsedCore.lastUpdatedTs || 0) >
+            Number(bestData.lastUpdatedTs || 0)
+        ) {
+          bestData = parsedCore;
+        }
+      } catch (e) {}
+    }
+    return bestData ? normalizeLoadedData(bestData) : INITIAL_STATE;
+  });
+
+  // Khôi phục thêm từ IndexedDB nếu IndexedDB có bản lưu mới hơn hoặc đầy đủ tệp hơn
+  useEffect(() => {
+    loadFromIndexedDB((idbData) => {
+      if (!idbData || typeof idbData !== "object") return;
+      setAppData((prev) => {
+        const idbTs = Number(idbData.lastUpdatedTs || 0);
+        const curTs = Number(prev.lastUpdatedTs || 0);
+        if (idbTs >= curTs) {
+          return normalizeLoadedData(idbData);
+        }
+        return prev;
+      });
+    });
+  }, []);
 
   // Trạng thái Chọn Năm Học Toàn Cục ("ALL" hoặc cụ thể như "2026 - 2027")
   const [selectedAcademicYear, setSelectedAcademicYear] = useState(
@@ -925,70 +1051,139 @@ export default function App() {
   };
 
   // ============================================================================
-  // ĐỒNG BỘ FIREBASE REALTIME DATABASE 2 CHIỀU
+  // ĐỒNG BỘ FIREBASE REALTIME DATABASE TIẾT KIỆM BĂNG THÔNG & CHỐNG GHI ĐÈ NGƯỢC
   // ============================================================================
-  const cleanFirebaseEndpoint = (rawUrl) => {
+  const cleanFirebaseBaseUrl = (rawUrl) => {
     if (!rawUrl || !rawUrl.trim()) return "";
     let u = rawUrl.trim().replace(/\/+$/, "");
     if (!u.startsWith("http")) u = "https://" + u;
-    return `${u}/classroom_nhatha_v8.json`;
+    return u;
   };
 
-  const lastLocalSaveTsRef = React.useRef(0);
+  const cleanFirebaseEndpoint = (rawUrl) => {
+    const base = cleanFirebaseBaseUrl(rawUrl);
+    return base ? `${base}/classroom_nhatha_v8.json` : "";
+  };
+
+  const lastLocalSaveTsRef = React.useRef(Number(appData.lastUpdatedTs || 0));
+  const hasPendingUnsyncedChangesRef = React.useRef(false);
+
+  const persistLocalMultiLayer = (payload) => {
+    // 1. Luôn lưu bản Core siêu nhẹ vào localStorage trước (Đảm bảo 100% không bao giờ tràn 5MB)
+    const lightPayload = stripHeavyBase64(payload);
+    safeSetStorage("data_nhatha_core_v8", JSON.stringify(lightPayload));
+
+    // 2. Thử lưu bản đầy đủ vào localStorage; nếu vượt 5MB thì lưu bản nhẹ
+    const okFull = safeSetStorage(
+      "data_nhatha_classroom_v8",
+      JSON.stringify(payload)
+    );
+    if (!okFull) {
+      safeSetStorage("data_nhatha_classroom_v8", JSON.stringify(lightPayload));
+    }
+
+    // 3. Lưu bản đầy đủ vào IndexedDB
+    saveToIndexedDB(payload);
+  };
+
+  const pushPayloadToFirebase = async (payload, autoStripOnFail = true) => {
+    const endpoint = cleanFirebaseEndpoint(firebaseUrl);
+    if (!endpoint) return false;
+
+    setSyncStatus("syncing");
+    try {
+      const bodyStr = JSON.stringify(payload);
+      // Nếu tổng dung lượng > 6MB thì tự động lọc bớt chuỗi Base64 nặng để không làm sập Firebase
+      const finalBodyStr =
+        bodyStr.length > 6 * 1024 * 1024
+          ? JSON.stringify(stripHeavyBase64(payload))
+          : bodyStr;
+
+      const res = await fetch(endpoint, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: finalBodyStr,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      hasPendingUnsyncedChangesRef.current = false;
+      setSyncStatus("synced");
+      setLastSyncTime(new Date().toLocaleTimeString("vi-VN"));
+      return true;
+    } catch (e) {
+      if (autoStripOnFail) {
+        try {
+          const lightBody = JSON.stringify(stripHeavyBase64(payload));
+          const resRetry = await fetch(endpoint, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: lightBody,
+          });
+          if (resRetry.ok) {
+            hasPendingUnsyncedChangesRef.current = false;
+            setSyncStatus("synced");
+            setLastSyncTime(new Date().toLocaleTimeString("vi-VN"));
+            return true;
+          }
+        } catch (retryErr) {}
+      }
+      hasPendingUnsyncedChangesRef.current = true;
+      setSyncStatus("error");
+      return false;
+    }
+  };
 
   const fetchFromFirebase = async (silent = false) => {
+    const base = cleanFirebaseBaseUrl(firebaseUrl);
     const endpoint = cleanFirebaseEndpoint(firebaseUrl);
-    if (!endpoint) return;
-    // Không ghi đè nếu người dùng vừa thao tác lưu cục bộ trong vòng 15 giây qua
-    if (silent && Date.now() - lastLocalSaveTsRef.current < 15000) return;
-    if (!silent) setSyncStatus("syncing");
+    if (!base || !endpoint) return;
+
+    // Không ghi đè nếu người dùng vừa thao tác lưu cục bộ trong vòng 20 giây qua
+    if (Date.now() - lastLocalSaveTsRef.current < 20000) return;
+
+    // Nếu còn thay đổi cục bộ chưa đẩy lên được Firebase, ưu tiên đẩy lên thay vì kéo bản cũ về
+    if (hasPendingUnsyncedChangesRef.current) {
+      await pushPayloadToFirebase(appData, true);
+      return;
+    }
+
     try {
+      // BƯỚC TIẾT KIỆM BĂNG THÔNG: Khi chạy ngầm (silent), chỉ tải đúng số `lastUpdatedTs.json` (15 byte)
+      if (silent) {
+        const tsRes = await fetch(
+          `${base}/classroom_nhatha_v8/lastUpdatedTs.json`
+        );
+        if (!tsRes.ok) return;
+        const remoteTsOnly = Number((await tsRes.json()) || 0);
+        const currentLocalTs = Number(
+          appData.lastUpdatedTs || lastLocalSaveTsRef.current || 0
+        );
+        // Nếu dữ liệu trên Firebase không mới hơn trên máy -> Dừng ngay, tốn 0 MB băng thông!
+        if (remoteTsOnly <= currentLocalTs) {
+          return;
+        }
+      } else {
+        setSyncStatus("syncing");
+      }
+
       const res = await fetch(endpoint);
       if (!res.ok) throw new Error("Network error");
       const remoteData = await res.json();
       if (remoteData && typeof remoteData === "object") {
-        setAppData((prevLocal) => {
-          const remoteTs = Number(remoteData.lastUpdatedTs || 0);
-          const localTs = Number(prevLocal.lastUpdatedTs || 0);
-          if (silent && localTs > remoteTs) {
-            return prevLocal;
-          }
-          const merged = {
-            ...INITIAL_STATE,
-            ...remoteData,
-            teacherPassword:
-              remoteData.teacherPassword || TEACHER_INFO.defaultPass,
-            academicYears:
-              remoteData.academicYears && remoteData.academicYears.length > 0
-                ? remoteData.academicYears
-                : DEFAULT_ACADEMIC_YEARS,
-            currentAcademicYear:
-              remoteData.currentAcademicYear || INITIAL_STATE.currentAcademicYear,
-            curriculum: remoteData.curriculum || DEFAULT_CURRICULUM,
-            timeSlots:
-              remoteData.timeSlots && remoteData.timeSlots.length > 0
-                ? remoteData.timeSlots
-                : DEFAULT_TIME_SLOTS,
-            classes: remoteData.classes || [],
-            students: remoteData.students || [],
-            announcements: remoteData.announcements || [],
-            calendarEvents: remoteData.calendarEvents || [],
-            documents: remoteData.documents || [],
-            examPapers: remoteData.examPapers || [],
-            examSubmissions: remoteData.examSubmissions || [],
-            homeworks: remoteData.homeworks || [],
-            homeworkSubmissions: remoteData.homeworkSubmissions || [],
-            customFlashcards: remoteData.customFlashcards || [],
-            attendanceSessions: remoteData.attendanceSessions || [],
-            achievements: (remoteData.achievements || []).filter(
-              (a) => !String(a.id || "").startsWith("ACH_SAMPLE_")
-            ),
-            sosQuestions: remoteData.sosQuestions || [],
-            chemFeedPosts: remoteData.chemFeedPosts || [],
-          };
-          safeSetStorage("data_nhatha_classroom_v8", JSON.stringify(merged));
-          return merged;
-        });
+        const remoteTs = Number(remoteData.lastUpdatedTs || 0);
+        const localTs = Number(
+          appData.lastUpdatedTs || lastLocalSaveTsRef.current || 0
+        );
+
+        // KHÓA BẢO VỆ TUYỆT ĐỐI (Cả khi F5 lẫn chạy ngầm):
+        // Nếu bản trên máy mới hơn bản trên Firebase -> Đẩy bản trên máy lên Firebase, KHÔNG ghi đè!
+        if (localTs > remoteTs) {
+          await pushPayloadToFirebase(appData, true);
+          return;
+        }
+
+        const merged = normalizeLoadedData(remoteData);
+        setAppData(merged);
+        persistLocalMultiLayer(merged);
         setLastSyncTime(new Date().toLocaleTimeString("vi-VN"));
       }
       setSyncStatus("synced");
@@ -1006,38 +1201,52 @@ export default function App() {
       lastUpdatedTs: nowTs,
     };
     setAppData(payload);
-    safeSetStorage("data_nhatha_classroom_v8", JSON.stringify(payload));
+    persistLocalMultiLayer(payload);
+    await pushPayloadToFirebase(payload, true);
+  };
 
-    const endpoint = cleanFirebaseEndpoint(firebaseUrl);
-    if (!endpoint) return;
+  // Dọn dẹp toàn bộ chuỗi tệp Base64 nặng trên Firebase chỉ bằng 1 chạm (Giữ nguyên 100% Lớp, HS, Điểm, Lịch, Link Drive)
+  const handleCleanFirebaseStorage = () => {
+    askConfirm(
+      "Hệ thống sẽ dọn sạch các tệp đính kèm Base64 nặng đang làm đầy bộ nhớ Firebase, nhưng GIỮ NGUYÊN 100% danh sách Lớp học, Học sinh, Điểm số, Lịch học, Bản tin và các đường link Google Drive. Bạn có muốn thực hiện ngay không?",
+      async () => {
+        const cleaned = stripHeavyBase64(appData);
+        await saveToAll(cleaned);
+        notify(
+          "🧹 Đã giải phóng bộ nhớ Firebase thành công! Toàn bộ Lớp học, Học sinh và Điểm số được bảo toàn.",
+          "success"
+        );
+      }
+    );
+  };
 
-    setSyncStatus("syncing");
-    try {
-      const res = await fetch(endpoint, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error("Failed to save");
-      setSyncStatus("synced");
-      setLastSyncTime(new Date().toLocaleTimeString("vi-VN"));
-    } catch (e) {
-      setSyncStatus("error");
-    }
+  // Xuất file sao lưu dự phòng (.json) về máy tính
+  const handleExportBackupJSON = () => {
+    const dataStr = JSON.stringify(appData, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Sao_luu_Lop_Hoa_${new Date()
+      .toLocaleDateString("vi-VN")
+      .replace(/\//g, "-")}.json`;
+    a.click();
+    notify("📦 Đã tải tệp sao lưu toàn bộ dữ liệu (.json) về máy!", "success");
   };
 
   useEffect(() => {
     if (firebaseUrl) {
       fetchFromFirebase(false);
+      // Kiểm tra siêu nhẹ (15 byte) mỗi 25 giây để tiết kiệm băng thông tối đa
       const timer = setInterval(() => {
         fetchFromFirebase(true);
-      }, 12000);
+      }, 25000);
       return () => clearInterval(timer);
     }
   }, [firebaseUrl]);
 
   // ============================================================================
-  // TẢI ẢNH & TÀI LIỆU LINH HOẠT
+  // TẢI ẢNH & TÀI LIỆU LINH HOẠT (NÉN SIÊU NHẸ CHỐNG TRÀN FIREBASE)
   // ============================================================================
   const handleFlexibleFileUpload = (e, callback) => {
     const file = e.target.files?.[0];
@@ -1049,13 +1258,13 @@ export default function App() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement("canvas");
-          const maxW = 900;
+          const maxW = 720;
           const scale = img.width > maxW ? maxW / img.width : 1;
           canvas.width = img.width * scale;
           canvas.height = img.height * scale;
           const ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.72);
+          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.55);
           callback({
             fileName: file.name,
             fileType: "image",
@@ -1066,11 +1275,13 @@ export default function App() {
       };
       reader.readAsDataURL(file);
     } else {
-      if (file.size > 2.5 * 1024 * 1024) {
+      if (file.size > 600 * 1024) {
         notify(
-          "Tệp lớn hơn 2.5MB. Để tốc độ đồng bộ đám mây nhanh nhất, bạn nên dán kèm đường link Google Drive hoặc chọn tệp nhỏ hơn.",
+          "⚠️ Tệp lớn hơn 600KB! Để tránh tràn bộ nhớ 1GB của Firebase, bạn hãy tải tệp này lên Google Drive rồi dán đường link vào ô Link tài liệu nhé.",
           "warn"
         );
+        e.target.value = "";
+        return;
       }
       const reader = new FileReader();
       reader.onload = (ev) => {
@@ -10975,30 +11186,75 @@ Email: ${TEACHER_INFO.email}`;
         </div>
       )}
 
-      {/* MODAL CẤU HÌNH ĐÁM MÂY FIREBASE */}
+            {/* MODAL CẤU HÌNH & DỌN DUNG LƯỢNG ĐÁM MÂY FIREBASE */}
       {showCloudModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-[#E2DFD7]">
             <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-base text-[#1B3B48]">
-                Kết nối Đám mây Firebase Realtime Database
-              </h3>
+              <div>
+                <h3 className="font-bold text-base text-[#1B3B48]">
+                  ☁️ Quản lý Đám mây Firebase & Giải phóng Bộ nhớ
+                </h3>
+                <p className="text-xs text-[#5C7667]">
+                  Dung lượng gói dữ liệu hiện tại:{" "}
+                  <strong className="text-[#1B3B48]">
+                    {(JSON.stringify(appData).length / 1024).toFixed(1)} KB
+                  </strong>
+                </p>
+              </div>
               <button
                 onClick={() => setShowCloudModal(false)}
-                className="text-xs font-bold"
+                className="text-xs font-bold text-[#5C7667]"
               >
                 ✕ Đóng
               </button>
             </div>
-            <input
-              type="text"
-              value={tempFirebaseInput}
-              onChange={(e) => setTempFirebaseInput(e.target.value)}
-              placeholder="https://lophoaduonganhtuananh-default-rtdb.asia-southeast1.firebasedatabase.app"
-              className="w-full p-2.5 rounded-xl border text-xs font-mono"
-            />
-            <div className="flex justify-end">
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-[#1B3B48]">
+                Đường dẫn Firebase Realtime Database:
+              </label>
+              <input
+                type="text"
+                value={tempFirebaseInput}
+                onChange={(e) => setTempFirebaseInput(e.target.value)}
+                placeholder="https://lophoaduonganhtuananh-37e47-default-rtdb.asia-southeast1.firebasedatabase.app"
+                className="w-full p-2.5 rounded-xl border text-xs font-mono"
+              />
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] space-y-2.5 text-xs">
+              <div className="font-bold text-[#1B3B48]">
+                🛠️ Công cụ Chống tràn bộ nhớ & Bảo vệ dữ liệu:
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleCleanFirebaseStorage}
+                  className="px-3.5 py-2 rounded-xl bg-[#9C6644] hover:bg-[#7F5135] text-white font-bold transition"
+                >
+                  🧹 Dọn nhẹ tệp Base64 trên Firebase (Giữ nguyên Lớp & HS)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportBackupJSON}
+                  className="px-3.5 py-2 rounded-xl bg-[#2C4A3E] hover:bg-[#1B3B48] text-[#E9C46A] font-bold transition"
+                >
+                  📦 Tải bản Sao lưu (.JSON) về máy
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
               <button
+                type="button"
+                onClick={() => setShowCloudModal(false)}
+                className="px-4 py-2 rounded-xl bg-gray-100 text-xs font-bold"
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   const trimmed = tempFirebaseInput.trim();
                   setFirebaseUrl(trimmed);
@@ -11006,7 +11262,7 @@ Email: ${TEACHER_INFO.email}`;
                   setShowCloudModal(false);
                   if (trimmed) saveToAll(appData);
                 }}
-                className="bg-[#1B3B48] text-white px-4 py-2 rounded-xl text-xs font-bold"
+                className="bg-[#1B3B48] text-[#E9C46A] px-4 py-2 rounded-xl text-xs font-bold"
               >
                 Lưu & Đồng bộ ngay
               </button>
@@ -11014,7 +11270,6 @@ Email: ${TEACHER_INFO.email}`;
           </div>
         </div>
       )}
-
       {/* MODAL XEM TRƯỚC & GỬI EMAIL */}
       {emailPreviewModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
