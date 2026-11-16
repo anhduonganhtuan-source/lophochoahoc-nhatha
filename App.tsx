@@ -3,7 +3,6 @@ import React, { useState, useEffect } from "react";
 
 // ============================================================================
 // DÁN LINK FIREBASE REALTIME DATABASE CỦA BẠN VÀO GIỮA 2 DẤU NGOẶC KÉP DƯỚI ĐÂY:
-// Ví dụ: const DEFAULT_FIREBASE_URL = "https://lophoaduonganhtuananh-default-rtdb.asia-southeast1.firebasedatabase.app";
 // ============================================================================
 const DEFAULT_FIREBASE_URL =
   "https://lophoaduonganhtuananh-37e47-default-rtdb.asia-southeast1.firebasedatabase.app/";
@@ -718,8 +717,6 @@ const getLiveSessionStatus = (dayDateKey, startTimeStr, endTimeStr, nowObj) => {
   };
 };
 
-const DEFAULT_ACHIEVEMENTS = [];
-
 const INITIAL_STATE = {
   teacherPassword: TEACHER_INFO.defaultPass,
   academicYears: DEFAULT_ACADEMIC_YEARS,
@@ -743,6 +740,9 @@ const INITIAL_STATE = {
   lastUpdated: "",
 };
 
+// ============================================================================
+// HỆ THỐNG LƯU TRỮ ĐA TẦNG (LOCALSTORAGE NHẸ + INDEXEDDB + FIREBASE TIẾT KIỆM BĂNG THÔNG)
+// ============================================================================
 const safeGetStorage = (key, fallback = null) => {
   try {
     const val = localStorage.getItem(key);
@@ -760,7 +760,7 @@ const safeSetStorage = (key, val) => {
     return false;
   }
 };
-// Lọc bỏ chuỗi Base64 nặng để tạo bản sao siêu nhẹ (<200KB), đảm bảo Lớp & Học sinh luôn lưu được vào localStorage
+
 const stripHeavyBase64 = (dataObj) => {
   if (!dataObj || typeof dataObj !== "object") return dataObj;
   return {
@@ -800,7 +800,6 @@ const stripHeavyBase64 = (dataObj) => {
   };
 };
 
-// Lưu trữ tầng sâu bằng IndexedDB (Dung lượng hàng trăm MB, không bị giới hạn 5MB như localStorage)
 const IDB_NAME = "NhatHaClassroomDB_v8";
 const IDB_STORE = "app_state";
 
@@ -819,9 +818,7 @@ const saveToIndexedDB = (dataObj) => {
       const tx = db.transaction(IDB_STORE, "readwrite");
       tx.objectStore(IDB_STORE).put(dataObj, "latest");
     };
-  } catch (err) {
-    // Ignore IDB sandbox errors
-  }
+  } catch (err) {}
 };
 
 const loadFromIndexedDB = (callback) => {
@@ -842,9 +839,7 @@ const loadFromIndexedDB = (callback) => {
         if (getReq.result) callback(getReq.result);
       };
     };
-  } catch (err) {
-    // Ignore IDB sandbox errors
-  }
+  } catch (err) {}
 };
 
 export default function App() {
@@ -857,11 +852,9 @@ export default function App() {
     }
   }, []);
 
-  // Thông báo Toast & Hộp thoại Xác nhận nội bộ (thay thế alert/confirm)
   const [toastMsg, setToastMsg] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
 
-  // Chuông thông báo (Notification Bell)
   const [showBellDropdown, setShowBellDropdown] = useState(false);
   const [readNotifIds, setReadNotifIds] = useState(() => {
     const saved = safeGetStorage("data_nhatha_read_notifs", "[]");
@@ -899,7 +892,6 @@ export default function App() {
     setConfirmDialog({ message, onConfirm });
   };
 
-  // Đồng hồ thời gian thực chạy từng giây
   const [realTimeNow, setRealTimeNow] = useState(() => new Date());
   useEffect(() => {
     const timer = setInterval(() => {
@@ -975,7 +967,6 @@ export default function App() {
     return bestData ? normalizeLoadedData(bestData) : INITIAL_STATE;
   });
 
-  // Khôi phục thêm từ IndexedDB nếu IndexedDB có bản lưu mới hơn hoặc đầy đủ tệp hơn
   useEffect(() => {
     loadFromIndexedDB((idbData) => {
       if (!idbData || typeof idbData !== "object") return;
@@ -990,24 +981,20 @@ export default function App() {
     });
   }, []);
 
-  // Trạng thái Chọn Năm Học Toàn Cục ("ALL" hoặc cụ thể như "2026 - 2027")
   const [selectedAcademicYear, setSelectedAcademicYear] = useState(
     () => appData.currentAcademicYear || "2026 - 2027"
   );
   const [showYearManagerModal, setShowYearManagerModal] = useState(false);
   const [newYearInput, setNewYearInput] = useState("");
 
-  // Bộ lọc Bảng vàng ngoài màn hình đăng nhập
   const [publicHonorFilter, setPublicHonorFilter] = useState("ALL");
   const [publicHonorYearFilter, setPublicHonorYearFilter] = useState("ALL");
 
-  // Trạng thái Đăng nhập (Bảo mật tuyệt đối)
   const [currentUser, setCurrentUser] = useState(null);
   const [loginAccount, setLoginAccount] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
 
-  // Lịch sử điều hướng
   const [navStack, setNavStack] = useState(["home"]);
   const activeView = navStack[navStack.length - 1];
 
@@ -1031,7 +1018,6 @@ export default function App() {
     }
   };
 
-  // Kiểm tra 1 bản ghi có thuộc Năm học đang chọn không
   const matchesSelectedYear = (itemYear) => {
     if (selectedAcademicYear === "ALL") return true;
     if (!itemYear) return true;
@@ -1054,7 +1040,7 @@ export default function App() {
   // ============================================================================
   const cleanFirebaseBaseUrl = (rawUrl) => {
     if (!rawUrl || !rawUrl.trim()) return "";
-    let u = rawUrl.trim().replace(/\/+$/, "");
+    let u = rawUrl.trim().replace(/\\/+$/, "");
     if (!u.startsWith("http")) u = "https://" + u;
     return u;
   };
@@ -1068,11 +1054,8 @@ export default function App() {
   const hasPendingUnsyncedChangesRef = React.useRef(false);
 
   const persistLocalMultiLayer = (payload) => {
-    // 1. Luôn lưu bản Core siêu nhẹ vào localStorage trước (Đảm bảo 100% không bao giờ tràn 5MB)
     const lightPayload = stripHeavyBase64(payload);
     safeSetStorage("data_nhatha_core_v8", JSON.stringify(lightPayload));
-
-    // 2. Thử lưu bản đầy đủ vào localStorage; nếu vượt 5MB thì lưu bản nhẹ
     const okFull = safeSetStorage(
       "data_nhatha_classroom_v8",
       JSON.stringify(payload)
@@ -1080,8 +1063,6 @@ export default function App() {
     if (!okFull) {
       safeSetStorage("data_nhatha_classroom_v8", JSON.stringify(lightPayload));
     }
-
-    // 3. Lưu bản đầy đủ vào IndexedDB
     saveToIndexedDB(payload);
   };
 
@@ -1092,7 +1073,6 @@ export default function App() {
     setSyncStatus("syncing");
     try {
       const bodyStr = JSON.stringify(payload);
-      // Nếu tổng dung lượng > 6MB thì tự động lọc bớt chuỗi Base64 nặng để không làm sập Firebase
       const finalBodyStr =
         bodyStr.length > 6 * 1024 * 1024
           ? JSON.stringify(stripHeavyBase64(payload))
@@ -1136,17 +1116,14 @@ export default function App() {
     const endpoint = cleanFirebaseEndpoint(firebaseUrl);
     if (!base || !endpoint) return;
 
-    // Không ghi đè nếu người dùng vừa thao tác lưu cục bộ trong vòng 20 giây qua
     if (Date.now() - lastLocalSaveTsRef.current < 20000) return;
 
-    // Nếu còn thay đổi cục bộ chưa đẩy lên được Firebase, ưu tiên đẩy lên thay vì kéo bản cũ về
     if (hasPendingUnsyncedChangesRef.current) {
       await pushPayloadToFirebase(appData, true);
       return;
     }
 
     try {
-      // BƯỚC TIẾT KIỆM BĂNG THÔNG: Khi chạy ngầm (silent), chỉ tải đúng số `lastUpdatedTs.json` (15 byte)
       if (silent) {
         const tsRes = await fetch(
           `${base}/classroom_nhatha_v8/lastUpdatedTs.json`
@@ -1156,7 +1133,6 @@ export default function App() {
         const currentLocalTs = Number(
           appData.lastUpdatedTs || lastLocalSaveTsRef.current || 0
         );
-        // Nếu dữ liệu trên Firebase không mới hơn trên máy -> Dừng ngay, tốn 0 MB băng thông!
         if (remoteTsOnly <= currentLocalTs) {
           return;
         }
@@ -1173,8 +1149,6 @@ export default function App() {
           appData.lastUpdatedTs || lastLocalSaveTsRef.current || 0
         );
 
-        // KHÓA BẢO VỆ TUYỆT ĐỐI (Cả khi F5 lẫn chạy ngầm):
-        // Nếu bản trên máy mới hơn bản trên Firebase -> Đẩy bản trên máy lên Firebase, KHÔNG ghi đè!
         if (localTs > remoteTs) {
           await pushPayloadToFirebase(appData, true);
           return;
@@ -1204,7 +1178,6 @@ export default function App() {
     await pushPayloadToFirebase(payload, true);
   };
 
-  // Dọn dẹp toàn bộ chuỗi tệp Base64 nặng trên Firebase chỉ bằng 1 chạm (Giữ nguyên 100% Lớp, HS, Điểm, Lịch, Link Drive)
   const handleCleanFirebaseStorage = () => {
     askConfirm(
       "Hệ thống sẽ dọn sạch các tệp đính kèm Base64 nặng đang làm đầy bộ nhớ Firebase, nhưng GIỮ NGUYÊN 100% danh sách Lớp học, Học sinh, Điểm số, Lịch học, Bản tin và các đường link Google Drive. Bạn có muốn thực hiện ngay không?",
@@ -1219,7 +1192,6 @@ export default function App() {
     );
   };
 
-  // Xuất file sao lưu dự phòng (.json) về máy tính
   const handleExportBackupJSON = () => {
     const dataStr = JSON.stringify(appData, null, 2);
     const blob = new Blob([dataStr], { type: "application/json" });
@@ -1228,7 +1200,7 @@ export default function App() {
     a.href = url;
     a.download = `Sao_luu_Lop_Hoa_${new Date()
       .toLocaleDateString("vi-VN")
-      .replace(/\//g, "-")}.json`;
+      .replace(/\\//g, "-")}.json`;
     a.click();
     notify("📦 Đã tải tệp sao lưu toàn bộ dữ liệu (.json) về máy!", "success");
   };
@@ -1236,7 +1208,6 @@ export default function App() {
   useEffect(() => {
     if (firebaseUrl) {
       fetchFromFirebase(false);
-      // Kiểm tra siêu nhẹ (15 byte) mỗi 25 giây để tiết kiệm băng thông tối đa
       const timer = setInterval(() => {
         fetchFromFirebase(true);
       }, 25000);
@@ -1293,6 +1264,7 @@ export default function App() {
       reader.readAsDataURL(file);
     }
   };
+
 
   // ============================================================================
   // XỬ LÝ ĐĂNG NHẬP BẢO MẬT (CHỈ 1 TÀI KHOẢN GV DUY NHẤT)
@@ -1358,7 +1330,6 @@ export default function App() {
   const [selectedClassFilter, setSelectedClassFilter] = useState("ALL");
   const [selectedStudentId, setSelectedStudentId] = useState("");
 
-  // Lọc danh sách Lớp và Học sinh theo Năm học đang chọn
   const yearFilteredClasses = (appData.classes || []).filter((c) =>
     matchesSelectedYear(c.academicYear)
   );
@@ -1378,7 +1349,6 @@ export default function App() {
     }
   }, [currentUser, appData.students, selectedStudentId]);
 
-  // Tự động đồng bộ Mã lớp mặc định vào các Form khi Giáo viên tạo hoặc xóa lớp
   useEffect(() => {
     const firstClassId = appData.classes?.[0]?.id || "";
     const firstClassGrade = appData.classes?.[0]?.grade || "12";
@@ -1416,11 +1386,11 @@ export default function App() {
         appData.students[0] ||
         null;
 
-  // Form Thông báo & Chế độ gửi Email + Phân loại 3 mục Tin tức (Mục 01)
+  // Form Thông báo & Chế độ gửi Email + Phân loại Tin tức (Mục 01)
   const [newsCategoryFilter, setNewsCategoryFilter] = useState("ALL");
   const [annForm, setAnnForm] = useState({
     title: "",
-    category: "CLASS_NOTICE", // 'ACADEMIC' | 'TUITION' | 'CLASS_NOTICE'
+    category: "CLASS_NOTICE",
     sendMode: "BULK",
     classId: "ALL",
     targetStudentId: "",
@@ -1465,8 +1435,6 @@ export default function App() {
   });
 
   const [editingCalEvent, setEditingCalEvent] = useState(null);
-
-  // Modal Đính kèm Tài liệu học hôm nay cho Lớp học (Trang chủ / Mục 09)
   const [editingClassDocsModal, setEditingClassDocsModal] = useState(null);
 
   // Form Chỉnh sửa Lộ trình Chương & YCCĐ + Tải tài liệu theo từng Lớp/Chương (Mục 03)
@@ -1504,7 +1472,7 @@ export default function App() {
     attachmentDataUrl: "",
   });
 
-  // Form Tài liệu học tập & Giao Bài tập Trực tiếp qua Mail (Mục 05)
+  // Form Tài liệu học tập (Mục 05A) & Giao Bài tập Trực tiếp qua Mail (Mục 05B)
   const [docForm, setDocForm] = useState({
     title: "",
     grade: "12",
@@ -1550,12 +1518,11 @@ export default function App() {
   const [rosterFilterClass, setRosterFilterClass] = useState("ALL");
   const [rosterSearchQuery, setRosterSearchQuery] = useState("");
 
-  // Trạng thái Ô kiểm tra HS nộp bài hay chưa & Chấm điểm nhập thẳng vào Hồ sơ học tập (Mục 05)
   const [selectedTrackerHwId, setSelectedTrackerHwId] = useState("ALL");
-  const [trackerStatusFilter, setTrackerStatusFilter] = useState("ALL"); // 'ALL' | 'SUBMITTED' | 'NOT_SUBMITTED'
+  const [trackerStatusFilter, setTrackerStatusFilter] = useState("ALL");
   const [gradingInputs, setGradingInputs] = useState({});
 
-  // Form Đề thi & App Thi thử (Mục 06) - Chia theo Năm học & Hình thức (GKI, HKI, THPT...) + Tải tệp hoặc Link
+  // Form Đề thi & App Thi thử (Mục 06)
   const [examForm, setExamForm] = useState({
     title: "",
     academicYear: appData.currentAcademicYear || "2026 - 2027",
@@ -1632,11 +1599,11 @@ export default function App() {
   const [sosInput, setSosInput] = useState("");
   const [replyTexts, setReplyTexts] = useState({});
 
-  // Trạng thái Mục 10: Chuyện Hóa Học Hằng Ngày & Góc Hỏi Bài Khó (Kiểu Facebook Feed + Điểm tương tác)
-  const [feedFilterType, setFeedFilterType] = useState("ALL"); // 'ALL' | 'DAILY_STORY' | 'QUIZ_CHALLENGE' | 'STUDENT_QA'
+  // Trạng thái Mục 10: Chuyện Hóa Học Hằng Ngày & Góc Hỏi Bài Khó
+  const [feedFilterType, setFeedFilterType] = useState("ALL");
   const [feedFilterGrade, setFeedFilterGrade] = useState("ALL");
   const [newPostForm, setNewPostForm] = useState({
-    postType: "DAILY_STORY", // 'DAILY_STORY' (Bài báo / Chuyện Hóa học hằng ngày) | 'QUIZ_CHALLENGE' (Đố vui gợi mở có thưởng điểm) | 'STUDENT_QA' (Học sinh hỏi câu hỏi khó)
+    postType: "DAILY_STORY",
     grade: "ALL",
     classId: "ALL",
     title: "",
@@ -1672,11 +1639,21 @@ export default function App() {
   const [newTeacherPass, setNewTeacherPass] = useState("");
 
   const [attendanceModalClass, setAttendanceModalClass] = useState(null);
+  const [attendanceEventMeta, setAttendanceEventMeta] = useState(null);
   const [sessionTopic, setSessionTopic] = useState("");
   const [sessionRecords, setSessionRecords] = useState({});
   const [sessionDocId, setSessionDocId] = useState("");
   const [sessionCustomDocTitle, setSessionCustomDocTitle] = useState("");
   const [sessionCustomDocUrl, setSessionCustomDocUrl] = useState("");
+
+  // Điểm danh trực tiếp ngay lúc tạo lịch học (Mục 02)
+  const [calFormIncludeAttendance, setCalFormIncludeAttendance] = useState(false);
+  const [calFormAttendanceRecords, setCalFormAttendanceRecords] = useState({});
+
+  // Modal Sửa thông tin Lớp học & Sửa thông tin Học sinh sau khi tạo + Sửa Tài liệu
+  const [editingClassModal, setEditingClassModal] = useState(null);
+  const [editingStudentModal, setEditingStudentModal] = useState(null);
+  const [editingDocModal, setEditingDocModal] = useState(null);
 
   // ============================================================================
   // HÀM QUẢN LÝ NĂM HỌC (THÊM NĂM HỌC MỚI / ĐẶT NĂM HỌC MẶC ĐỊNH)
@@ -1711,8 +1688,7 @@ export default function App() {
   };
 
   // ============================================================================
-  // HÀM TẢI TÀI LIỆU LÊN (TỪ LỘ TRÌNH CHƯƠNG MỤC 03 HOẶC MỤC TÀI LIỆU MỤC 05)
-  // -> TỰ ĐỘNG CẬP NHẬT MỤC TIN TỨC (PHÂN MỤC HỌC THUẬT)
+  // HÀM TẢI TÀI LIỆU LÊN -> TỰ ĐỘNG CẬP NHẬT MỤC TIN TỨC (PHÂN MỤC HỌC THUẬT)
   // ============================================================================
   const createDocumentAndAutoNews = ({
     title,
@@ -1752,7 +1728,6 @@ export default function App() {
         ? `Khối ${newDoc.grade} (Tất cả các lớp)`
         : `Lớp ${newDoc.classId}`;
 
-    // Tự động tạo bản tin Học thuật trong mục Tin tức (Mục 01)
     const autoNews = {
       id: "ANN_DOC_" + Date.now(),
       title: `📚 [Tài liệu mới] ${newDoc.title} — ${classLabel}`,
@@ -1764,7 +1739,7 @@ export default function App() {
       targetLabel: classLabel,
       content: `Thầy ${TEACHER_INFO.fullName} vừa tải lên tài liệu học tập mới:\n• Tên tài liệu: ${newDoc.title}\n• Thuộc chương: ${newDoc.chapterTitle} (Khối ${newDoc.grade})\n• Áp dụng cho: ${classLabel} (Năm học ${activeYear})${
         newDoc.note ? `\n• Ghi chú hướng dẫn: ${newDoc.note}` : ""
-      }\n👉 Phụ huynh và học sinh có thể tải trực tiếp bên dưới hoặc xem trong Lộ trình Chương (Mục 03) và Kho Tài liệu (Mục 05).`,
+      }\n👉 Phụ huynh và học sinh có thể tải trực tiếp bên dưới hoặc xem trong Lộ trình Chương (Mục 03) và Kho Tài liệu (Mục 05A).`,
       externalUrl: newDoc.externalUrl,
       attachmentName: newDoc.fileName,
       attachmentType: newDoc.fileType,
@@ -1789,7 +1764,6 @@ export default function App() {
     return newDoc;
   };
 
-  // Xử lý tải tài liệu trực tiếp tại từng Chương trong Mục 03
   const handleUploadChapterDocument = (e, chap) => {
     e.preventDefault();
     if (!chapterDocForm.title.trim()) return;
@@ -1819,7 +1793,6 @@ export default function App() {
     setActiveChapterUploadId(null);
   };
 
-  // Xử lý tải tài liệu tại Mục 05 (Kho Tài liệu)
   const handleUploadDocInModule05 = (e) => {
     e.preventDefault();
     if (!docForm.title.trim()) return;
@@ -1906,7 +1879,6 @@ export default function App() {
     );
   };
 
-  // Thêm Ca học mới vào Bảng Lịch (Hỗ trợ Đính kèm tài liệu buổi học hôm đó)
   const handleAddCalendarEvent = (e) => {
     e.preventDefault();
     if (!calForm.title.trim()) return;
@@ -1940,7 +1912,6 @@ export default function App() {
         ? appData.currentAcademicYear || "2026 - 2027"
         : selectedAcademicYear;
 
-    // Kiểm tra thông tin tài liệu đính kèm buổi học hôm đó
     const linkedDocObj = (appData.documents || []).find(
       (d) => d.id === calForm.attachedDocId
     );
@@ -1984,10 +1955,103 @@ export default function App() {
       createdByRole: currentUser?.role || "teacher",
     };
 
+    let nextStudents = [...(appData.students || [])];
+    let nextAttendanceSessions = [...(appData.attendanceSessions || [])];
+
+    if (
+      !isStudent &&
+      calFormIncludeAttendance &&
+      Object.keys(calFormAttendanceRecords).length > 0
+    ) {
+      const dateStr = new Date().toLocaleString("vi-VN");
+      const sessionTopicStr = `${newEv.title} (${timeRangeText}${
+        dayObj ? ` • ${dayObj.fullDate}` : ""
+      })`;
+      const attachedDocLabel = newEv.lessonDocTitle || "";
+
+      nextStudents = nextStudents.map((st) => {
+        const belongs =
+          newEv.targetScope === "ALL" ||
+          isSameClass(st.classId, newEv.targetScope);
+        if (!belongs) return st;
+        const rec = calFormAttendanceRecords[st.id] || {
+          status: "PRESENT",
+          attitude: "Chú ý nghe giảng, ghi chép bài đầy đủ",
+        };
+        const prevHistory = st.attendanceHistory || [];
+        const scoreVal =
+          rec.status === "PRESENT"
+            ? 100
+            : rec.status === "LATE"
+            ? 85
+            : rec.status === "EXCUSED"
+            ? 70
+            : 0;
+        const statusLabel =
+          rec.status === "PRESENT"
+            ? "Đi học đầy đủ, đúng giờ"
+            : rec.status === "LATE"
+            ? "Đi học muộn"
+            : rec.status === "EXCUSED"
+            ? "Vắng có phép"
+            : "Vắng không phép";
+
+        const nextHistory = [
+          {
+            date: dateStr,
+            topic: sessionTopicStr,
+            attachedDocTitle: attachedDocLabel,
+            status: statusLabel,
+            scoreVal,
+            attitude: rec.attitude,
+            calendarEventId: newEv.id,
+          },
+          ...prevHistory,
+        ];
+
+        const avgRate = Math.round(
+          nextHistory.reduce((acc, cur) => acc + Number(cur.scoreVal), 0) /
+            nextHistory.length
+        );
+
+        return {
+          ...st,
+          attendanceRate: avgRate,
+          attendanceNote: `${statusLabel} (${
+            dayObj ? dayObj.fullDate : new Date().toLocaleDateString("vi-VN")
+          })`,
+          attitude: rec.attitude,
+          attendanceHistory: nextHistory,
+        };
+      });
+
+      const presentCount = Object.values(calFormAttendanceRecords).filter(
+        (r) => r.status === "PRESENT" || r.status === "LATE"
+      ).length;
+
+      const newSessionLog = {
+        id: "ATT" + Date.now(),
+        classId: newEv.targetScope,
+        calendarEventId: newEv.id,
+        dateKey: dayObj ? dayObj.dateKey : toDateKey(realTimeNow),
+        academicYear: activeYear,
+        date: dateStr,
+        topic: sessionTopicStr,
+        attachedDocTitle: attachedDocLabel,
+        attachedDocUrl: newEv.lessonDocUrl || "",
+        totalStudents: Object.keys(calFormAttendanceRecords).length,
+        presentCount,
+        records: calFormAttendanceRecords,
+      };
+      nextAttendanceSessions = [newSessionLog, ...nextAttendanceSessions];
+    }
+
     saveToAll({
       ...appData,
       timeSlots: nextSlots,
       calendarEvents: [...appData.calendarEvents, newEv],
+      students: nextStudents,
+      attendanceSessions: nextAttendanceSessions,
     });
     setCalForm({
       ...calForm,
@@ -2002,10 +2066,16 @@ export default function App() {
       lessonDocFileName: "",
       lessonDocDataUrl: "",
     });
-    notify("Đã lưu ca học và tài liệu đính kèm vào Bảng lịch!", "success");
+    setCalFormIncludeAttendance(false);
+    setCalFormAttendanceRecords({});
+    notify(
+      calFormIncludeAttendance
+        ? "Đã lưu ca học mới và hoàn tất điểm danh học sinh cho buổi học!"
+        : "Đã lưu ca học và tài liệu đính kèm vào Bảng lịch!",
+      "success"
+    );
   };
 
-  // Lưu chỉnh sửa Giờ học / Ngày học / Tuần học & Tài liệu đính kèm của 1 thẻ trên Bảng Lịch
   const handleSaveEditedCalEvent = (e) => {
     e.preventDefault();
     if (!editingCalEvent) return;
@@ -2132,12 +2202,10 @@ export default function App() {
     );
   };
 
-  // Lấy danh sách Tài liệu học hôm nay của 1 Lớp (Kết hợp tài liệu đính kèm trên Lớp + tài liệu ca học hôm nay của Lớp)
   const getTodayMaterialsForClass = (cls) => {
     const todayInfo = activeWeekInfo.days.find((d) => d.isToday);
     const items = [];
 
-    // 1. Tài liệu đính kèm trực tiếp vào Lớp học hôm nay
     if (cls.todayDocIds && cls.todayDocIds.length > 0) {
       cls.todayDocIds.forEach((docId) => {
         const d = (appData.documents || []).find((x) => x.id === docId);
@@ -2164,7 +2232,6 @@ export default function App() {
       });
     }
 
-    // 2. Tài liệu đính kèm trong Lịch học hôm nay của lớp đó
     if (todayInfo) {
       const todayClassEvents = (appData.calendarEvents || []).filter((ev) => {
         if (ev.dayOfWeek !== todayInfo.dayOfWeek) return false;
@@ -2231,31 +2298,22 @@ export default function App() {
   };
 
   // ============================================================================
-  // HÀM NGHIỆP VỤ QUẢN LÝ LỚP, ĐIỂM DANH, GIAO BÀI TẬP QUA MAIL & FLASHCARD CÁ NHÂN
-  // ============================================================================
-  // ============================================================================
   // HÀM XỬ LÝ MỤC 10: CHUYỆN HÓA HỌC HẰNG NGÀY, BÀI BÁO GỢI MỞ & HỎI ĐÁP KIỂU FACEBOOK
   // ============================================================================
-  const adjustStudentEngagementPoints = (studentId, deltaPoints, reasonText = "") => {
+  const adjustStudentEngagementPoints = (studentId, deltaPoints) => {
     if (!studentId || studentId === "TEACHER") return;
-    setAppData((prev) => {
-      const nextStudents = (prev.students || []).map((st) => {
-        if (st.id !== studentId) return st;
-        const currentPts = Number(st.engagementPoints || 0);
-        const nextPts = Math.max(0, currentPts + Number(deltaPoints || 0));
-        return {
-          ...st,
-          engagementPoints: nextPts,
-        };
-      });
-      const payload = {
-        ...prev,
-        students: nextStudents,
-        lastUpdated: new Date().toLocaleString("vi-VN"),
-        lastUpdatedTs: Date.now(),
+    const nextStudents = (appData.students || []).map((st) => {
+      if (st.id !== studentId) return st;
+      const currentPts = Number(st.engagementPoints || 0);
+      const nextPts = Math.max(0, currentPts + Number(deltaPoints || 0));
+      return {
+        ...st,
+        engagementPoints: nextPts,
       };
-      safeSetStorage("data_nhatha_classroom_v8", JSON.stringify(payload));
-      return payload;
+    });
+    saveToAll({
+      ...appData,
+      students: nextStudents,
     });
   };
 
@@ -2302,7 +2360,7 @@ export default function App() {
     const newPost = {
       id: "POST_" + Date.now(),
       academicYear: activeYear,
-      postType: effectiveType, // 'DAILY_STORY' | 'QUIZ_CHALLENGE' | 'STUDENT_QA'
+      postType: effectiveType,
       grade: newPostForm.grade || "ALL",
       classId: authorClassId,
       authorId,
@@ -2327,7 +2385,6 @@ export default function App() {
       createdAt: new Date().toLocaleString("vi-VN"),
     };
 
-    // Nếu học sinh đăng câu hỏi khó, thưởng +2 điểm tương tác chủ động học tập
     let nextStudents = [...(appData.students || [])];
     if (authorRole === "student" && authorId !== "TEACHER") {
       nextStudents = nextStudents.map((st) =>
@@ -2400,7 +2457,6 @@ export default function App() {
     let commenterClass =
       currentUser?.role === "student" ? currentUser.classId : "Giáo viên";
 
-    // Cho phép Giáo viên chọn đóng vai hoặc chọn tên Học sinh khi test bình luận
     if (currentUser?.role === "teacher" && draftObj.asStudentId) {
       const st = (appData.students || []).find(
         (s) => s.id === draftObj.asStudentId
@@ -2413,7 +2469,6 @@ export default function App() {
       }
     }
 
-    // Khi Học sinh bình luận trả lời đáp án hoặc giải bài giúp bạn -> Tự động +1 điểm tương tác tham gia
     const participationBonus = commenterRole === "student" ? 1 : 0;
 
     const newComment = {
@@ -2473,7 +2528,6 @@ export default function App() {
     }
   };
 
-  // Giáo viên duyệt Bình luận Đáp án đúng / Lời giải hay -> Cộng điểm thưởng tương tác cho Học sinh
   const handleApproveCommentAnswer = (post, comment) => {
     const bonusPts = Number(post.rewardPoints || 5);
     const alreadyApproved = Boolean(comment.isApprovedCorrect);
@@ -2528,14 +2582,12 @@ export default function App() {
     );
   };
 
-  // Quy đổi / Cộng điểm thưởng tương tác vào Hồ sơ học tập (Mục 04) của Học sinh
   const handleConvertEngagementToProfileScore = (student) => {
     const pts = Number(student.engagementPoints || 0);
     if (pts <= 0) {
       notify("Học sinh này chưa có điểm tương tác tích lũy để quy đổi!", "warn");
       return;
     }
-    // Quy đổi: Điểm thưởng chuyên đề tương tác Hóa học (tối đa 10 điểm)
     const convertedScore = Math.min(10, Number((8 + Math.min(2, pts * 0.1)).toFixed(2)));
     const recordId = `ENGAGEMENT_BONUS_${student.id}`;
     const nowStr = new Date().toLocaleDateString("vi-VN");
@@ -2732,7 +2784,7 @@ export default function App() {
           : ""
       }
 • Hướng dẫn / Yêu cầu: ${
-        newHw.description || "Hoàn thành đầy đủ và nộp đúng thời hạn tại Mục 05."
+        newHw.description || "Hoàn thành đầy đủ và nộp đúng thời hạn tại Mục 05B."
       }`,
       externalUrl: newHw.fileUrl,
       attachmentName: newHw.fileName,
@@ -2775,12 +2827,12 @@ ${
   newHw.fileUrl
     ? `- Đường link tải trực tiếp File Bài tập: ${newHw.fileUrl}`
     : newHw.fileName
-    ? `- File bài tập "${newHw.fileName}" đã được đăng tải sẵn tại Mục 05 trên Website lớp học.`
-    : "- Đề bài chi tiết đã được cập nhật tại Mục 05 trên Website lớp học."
+    ? `- File bài tập "${newHw.fileName}" đã được đăng tải sẵn tại Mục 05B trên Website lớp học.`
+    : "- Đề bài chi tiết đã được cập nhật tại Mục 05B trên Website lớp học."
 }
 
 3. ĐƯỜNG LINK TRUY CẬP NƠI NỘP BÀI TẬP:
-- Sau khi làm bài xong, Học sinh truy cập vào đường link dưới đây (vào Mục 05 -> Khu vực Nộp Bài Tập) để gửi ảnh chụp bài làm hoặc file bài nộp lên hệ thống:
+- Sau khi làm bài xong, Học sinh truy cập vào đường link dưới đây (vào Mục 05B -> Khu vực Nộp Bài Tập) để gửi ảnh chụp bài làm hoặc file bài nộp lên hệ thống:
 👉 Link nơi nộp bài: ${portalUrl}
 
 Trân trọng,
@@ -2831,8 +2883,16 @@ Email: ${TEACHER_INFO.email}`;
     notify("Đã giao bài tập mới thành công!", "success");
   };
 
-  // Chấm điểm bài tập của Học sinh & Tự động nhập vào Hồ sơ học tập (Mục 04)
-  const handleGradeHomeworkAndSyncProfile = (hw, student, existingSub = null) => {
+  const handleGradeHomeworkAndSyncProfile = (hwOrSub, student = null, existingSub = null) => {
+    if (hwOrSub && !student && hwOrSub.homeworkId) {
+      const subObj = hwOrSub;
+      const foundHw = (appData.homeworks || []).find((h) => h.id === subObj.homeworkId) || { id: subObj.homeworkId, title: subObj.homeworkTitle || "Bài tập" };
+      const foundSt = (appData.students || []).find((s) => s.id === subObj.studentId) || { id: subObj.studentId, name: subObj.studentName, classId: subObj.classId };
+      hwOrSub = foundHw;
+      student = foundSt;
+      existingSub = subObj;
+    }
+    const hw = hwOrSub;
     const key = existingSub ? existingSub.id : `${hw.id}_${student.id}`;
     const inputObj = gradingInputs[key] || {};
     const rawScore =
@@ -2889,7 +2949,6 @@ Email: ${TEACHER_INFO.email}`;
       ];
     }
 
-    // Đảm bảo học sinh được đánh dấu đã hoàn thành trong bài tập đó
     const nextHomeworks = (appData.homeworks || []).map((item) => {
       if (item.id === hw.id) {
         const done = item.completedBy || [];
@@ -2901,7 +2960,6 @@ Email: ${TEACHER_INFO.email}`;
       return item;
     });
 
-    // Cập nhật điểm vào Hồ sơ học tập (inClassTests & tính lại Điểm TB score) của Học sinh
     const profileTestId = `HW_PROFILE_${hw.id}_${student.id}`;
     const nextStudents = (appData.students || []).map((st) => {
       if (st.id !== student.id) return st;
@@ -2997,7 +3055,6 @@ Email: ${TEACHER_INFO.email}`;
       return;
     }
 
-    // Xác định học sinh nộp bài (Nếu là HS đăng nhập -> lấy currentUser; Nếu là GV nộp thử hoặc chọn HS -> lấy từ dropdown hoặc tên nhập vào)
     let submitterStudent = null;
     if (currentUser?.role === "student") {
       submitterStudent =
@@ -3081,7 +3138,8 @@ Email: ${TEACHER_INFO.email}`;
     );
   };
 
-  const handleDeleteClass = (cls) => {
+  const handleDeleteClass = (clsOrId) => {
+    const cls = typeof clsOrId === "string" ? (appData.classes.find((c) => c.id === clsOrId) || { id: clsOrId, name: clsOrId }) : clsOrId;
     const count = appData.students.filter((s) => s.id && s.classId === cls.id)
       .length;
     const msg =
@@ -3108,30 +3166,102 @@ Email: ${TEACHER_INFO.email}`;
     });
   };
 
-  const openQuickAttendance = (cls) => {
-    const classStudents = getStudentsOfClass(cls.id);
+  const openQuickAttendance = (cls, eventMeta = null) => {
+    const classStudents =
+      cls.id === "ALL"
+        ? appData.students || []
+        : getStudentsOfClass(cls.id);
     if (classStudents.length === 0) {
       notify(
-        `Lớp ${cls.id} hiện chưa có học sinh nào. Vui lòng thêm học sinh vào lớp trước khi điểm danh.`,
+        cls.id === "ALL"
+          ? "Hệ thống hiện chưa có học sinh nào. Vui lòng thêm học sinh vào lớp trước khi điểm danh."
+          : `Lớp ${cls.id} hiện chưa có học sinh nào. Vui lòng thêm học sinh vào lớp trước khi điểm danh.`,
         "warn"
       );
       return;
     }
+
+    const existingSession = eventMeta?.eventId
+      ? (appData.attendanceSessions || []).find(
+          (s) =>
+            s.calendarEventId === eventMeta.eventId &&
+            (!eventMeta.dateKey || s.dateKey === eventMeta.dateKey)
+        )
+      : null;
+
     const initRec = {};
     classStudents.forEach((st) => {
-      initRec[st.id] = {
-        status: "PRESENT",
-        attitude: "Chú ý nghe giảng, ghi chép bài đầy đủ",
-      };
+      if (existingSession?.records && existingSession.records[st.id]) {
+        initRec[st.id] = existingSession.records[st.id];
+      } else {
+        initRec[st.id] = {
+          status: "PRESENT",
+          attitude: "Chú ý nghe giảng, ghi chép bài đầy đủ",
+        };
+      }
     });
     setSessionRecords(initRec);
     setSessionTopic(
-      `Buổi học ngày ${new Date().toLocaleDateString("vi-VN")}`
+      eventMeta?.topic ||
+        existingSession?.topic ||
+        `Buổi học ngày ${new Date().toLocaleDateString("vi-VN")}`
     );
-    setSessionDocId(cls.todayDocIds?.[0] || "");
-    setSessionCustomDocTitle(cls.todayCustomDocTitle || "");
-    setSessionCustomDocUrl(cls.todayCustomDocUrl || "");
+    setSessionDocId(
+      eventMeta?.attachedDocId !== undefined
+        ? eventMeta.attachedDocId
+        : cls.todayDocIds?.[0] || ""
+    );
+    setSessionCustomDocTitle(
+      eventMeta?.lessonDocTitle !== undefined
+        ? eventMeta.lessonDocTitle
+        : cls.todayCustomDocTitle || ""
+    );
+    setSessionCustomDocUrl(
+      eventMeta?.lessonDocUrl !== undefined
+        ? eventMeta.lessonDocUrl
+        : cls.todayCustomDocUrl || ""
+    );
+    setAttendanceEventMeta(eventMeta);
     setAttendanceModalClass(cls);
+  };
+
+  const openAttendanceFromCalendarEvent = (ev, dayObj = null) => {
+    const scope = ev.targetScope || "ALL";
+    if (scope.startsWith("HS:")) {
+      notify("Đây là lịch tự học cá nhân của học sinh.", "info");
+      return;
+    }
+    const foundCls =
+      scope === "ALL"
+        ? {
+            id: "ALL",
+            name: "Tất cả các lớp",
+            academicYear: ev.academicYear || appData.currentAcademicYear,
+            todayDocIds: [],
+          }
+        : (appData.classes || []).find((c) => isSameClass(c.id, scope)) || {
+            id: scope,
+            name: `Lớp ${scope}`,
+            academicYear: ev.academicYear || appData.currentAcademicYear,
+            todayDocIds: [],
+          };
+
+    const dateLabel = dayObj
+      ? `${dayObj.dayOfWeek} (${dayObj.fullDate})`
+      : ev.dayOfWeek || new Date().toLocaleDateString("vi-VN");
+    const timeLabel = ev.customTime || `${ev.startTime || ""} - ${ev.endTime || ""}`;
+
+    openQuickAttendance(foundCls, {
+      eventId: ev.id,
+      dateKey: dayObj ? dayObj.dateKey : toDateKey(realTimeNow),
+      fullDate: dayObj ? dayObj.fullDate : new Date().toLocaleDateString("vi-VN"),
+      dayOfWeek: dayObj ? dayObj.dayOfWeek : ev.dayOfWeek,
+      timeLabel,
+      topic: `${ev.title} (${timeLabel} • ${dateLabel})`,
+      attachedDocId: ev.attachedDocId || "",
+      lessonDocTitle: ev.lessonDocTitle || "",
+      lessonDocUrl: ev.lessonDocUrl || "",
+    });
   };
 
   const handleSaveAttendanceSession = (e) => {
@@ -3139,6 +3269,8 @@ Email: ${TEACHER_INFO.email}`;
     if (!attendanceModalClass) return;
 
     const dateStr = new Date().toLocaleString("vi-VN");
+    const shortDateStr =
+      attendanceEventMeta?.fullDate || new Date().toLocaleDateString("vi-VN");
     const linkedDoc = (appData.documents || []).find(
       (d) => d.id === sessionDocId
     );
@@ -3146,7 +3278,10 @@ Email: ${TEACHER_INFO.email}`;
       sessionCustomDocTitle.trim() || (linkedDoc ? linkedDoc.title : "");
 
     const nextStudents = appData.students.map((st) => {
-      if (st.classId !== attendanceModalClass.id) return st;
+      const belongs =
+        attendanceModalClass.id === "ALL" ||
+        isSameClass(st.classId, attendanceModalClass.id);
+      if (!belongs) return st;
       const rec = sessionRecords[st.id];
       if (!rec) return st;
 
@@ -3168,16 +3303,29 @@ Email: ${TEACHER_INFO.email}`;
           ? "Vắng có phép"
           : "Vắng không phép";
 
+      const filteredPrevHistory =
+        attendanceEventMeta?.eventId
+          ? prevHistory.filter(
+              (h) =>
+                !(
+                  h.calendarEventId === attendanceEventMeta.eventId &&
+                  h.dateKey === attendanceEventMeta.dateKey
+                )
+            )
+          : prevHistory;
+
       const nextHistory = [
         {
           date: dateStr,
+          dateKey: attendanceEventMeta?.dateKey || toDateKey(realTimeNow),
+          calendarEventId: attendanceEventMeta?.eventId || "",
           topic: sessionTopic,
           attachedDocTitle: attachedDocLabel,
           status: statusLabel,
           scoreVal,
           attitude: rec.attitude,
         },
-        ...prevHistory,
+        ...filteredPrevHistory,
       ];
 
       const avgRate = Math.round(
@@ -3188,17 +3336,14 @@ Email: ${TEACHER_INFO.email}`;
       return {
         ...st,
         attendanceRate: avgRate,
-        attendanceNote: `${statusLabel} (${new Date().toLocaleDateString(
-          "vi-VN"
-        )})`,
+        attendanceNote: `${statusLabel} (${shortDateStr})`,
         attitude: rec.attitude,
         attendanceHistory: nextHistory,
       };
     });
 
-    // Cập nhật luôn tài liệu học hôm đó vào lớp học
     const nextClasses = appData.classes.map((c) =>
-      c.id === attendanceModalClass.id
+      isSameClass(c.id, attendanceModalClass.id)
         ? {
             ...c,
             todayDocIds: sessionDocId ? [sessionDocId] : c.todayDocIds || [],
@@ -3210,9 +3355,15 @@ Email: ${TEACHER_INFO.email}`;
         : c
     );
 
+    const presentCount = Object.values(sessionRecords).filter(
+      (r) => r.status === "PRESENT" || r.status === "LATE"
+    ).length;
+
     const newSessionLog = {
       id: "ATT" + Date.now(),
       classId: attendanceModalClass.id,
+      calendarEventId: attendanceEventMeta?.eventId || "",
+      dateKey: attendanceEventMeta?.dateKey || toDateKey(realTimeNow),
       academicYear:
         attendanceModalClass.academicYear ||
         appData.currentAcademicYear ||
@@ -3223,21 +3374,356 @@ Email: ${TEACHER_INFO.email}`;
       attachedDocUrl:
         sessionCustomDocUrl.trim() || (linkedDoc ? linkedDoc.externalUrl : ""),
       totalStudents: Object.keys(sessionRecords).length,
+      presentCount,
+      records: sessionRecords,
     };
+
+    const prevSessions = (appData.attendanceSessions || []).filter((s) =>
+      attendanceEventMeta?.eventId
+        ? !(
+            s.calendarEventId === attendanceEventMeta.eventId &&
+            s.dateKey === attendanceEventMeta.dateKey
+          )
+        : true
+    );
 
     saveToAll({
       ...appData,
       classes: nextClasses,
       students: nextStudents,
-      attendanceSessions: [
-        newSessionLog,
-        ...(appData.attendanceSessions || []),
-      ],
+      attendanceSessions: [newSessionLog, ...prevSessions],
     });
     setAttendanceModalClass(null);
+    setAttendanceEventMeta(null);
     notify(
-      `Đã lưu điểm danh & đính kèm tài liệu buổi học Lớp ${attendanceModalClass.id}!`,
+      `✅ Đã lưu điểm danh (${presentCount}/${Object.keys(sessionRecords).length} HS có mặt) cho ${
+        attendanceModalClass.id === "ALL"
+          ? "Toàn bộ các lớp"
+          : `Lớp ${attendanceModalClass.id}`
+      }!`,
       "success"
+    );
+  };
+
+  const handleSaveEditedClass = (e) => {
+    e.preventDefault();
+    if (!editingClassModal) return;
+    const origId = editingClassModal.originalId;
+    const newId = (editingClassModal.id || "").trim().toUpperCase();
+    const newName = (editingClassModal.name || "").trim();
+    const newGrade = editingClassModal.grade || "12";
+    const newYear =
+      editingClassModal.academicYear ||
+      appData.currentAcademicYear ||
+      "2026 - 2027";
+    const newSchedule =
+      (editingClassModal.scheduleSummary || "").trim() || "Theo Thời khóa biểu";
+
+    if (!newId || !newName) {
+      notify("Vui lòng nhập đầy đủ Mã lớp và Tên lớp!", "warn");
+      return;
+    }
+
+    if (
+      !isSameClass(origId, newId) &&
+      (appData.classes || []).some((c) => isSameClass(c.id, newId))
+    ) {
+      notify(`Mã lớp ${newId} đã tồn tại! Vui lòng chọn mã lớp khác.`, "warn");
+      return;
+    }
+
+    const nextClasses = (appData.classes || []).map((c) =>
+      isSameClass(c.id, origId)
+        ? {
+            ...c,
+            id: newId,
+            name: newName,
+            grade: newGrade,
+            academicYear: newYear,
+            scheduleSummary: newSchedule,
+          }
+        : c
+    );
+
+    const nextStudents = (appData.students || []).map((s) =>
+      isSameClass(s.classId, origId)
+        ? {
+            ...s,
+            classId: newId,
+            grade: newGrade,
+            academicYear: newYear,
+          }
+        : s
+    );
+
+    const nextCalEvents = (appData.calendarEvents || []).map((ev) =>
+      isSameClass(ev.targetScope, origId)
+        ? {
+            ...ev,
+            targetScope: newId,
+            ownerName: `Lớp ${newId}`,
+          }
+        : ev
+    );
+
+    const nextDocs = (appData.documents || []).map((d) =>
+      isSameClass(d.classId, origId)
+        ? { ...d, classId: newId, grade: newGrade }
+        : d
+    );
+
+    const nextHomeworks = (appData.homeworks || []).map((h) =>
+      isSameClass(h.classId, origId)
+        ? {
+            ...h,
+            classId: newId,
+            targetLabel:
+              h.sendMode === "BULK" ? `Lớp ${newId}` : h.targetLabel,
+          }
+        : h
+    );
+
+    const nextHwSubs = (appData.homeworkSubmissions || []).map((sub) =>
+      isSameClass(sub.classId, origId) ? { ...sub, classId: newId } : sub
+    );
+
+    const nextExams = (appData.examPapers || []).map((ex) =>
+      isSameClass(ex.classId, origId) ? { ...ex, classId: newId } : ex
+    );
+
+    const nextAch = (appData.achievements || []).map((a) =>
+      isSameClass(a.classId, origId) ? { ...a, classId: newId } : a
+    );
+
+    const nextAtt = (appData.attendanceSessions || []).map((att) =>
+      isSameClass(att.classId, origId) ? { ...att, classId: newId } : att
+    );
+
+    const nextAnn = (appData.announcements || []).map((ann) =>
+      isSameClass(ann.classId, origId) ? { ...ann, classId: newId } : ann
+    );
+
+    const nextPosts = (appData.chemFeedPosts || []).map((p) =>
+      isSameClass(p.classId, origId) ? { ...p, classId: newId } : p
+    );
+
+    saveToAll({
+      ...appData,
+      classes: nextClasses,
+      students: nextStudents,
+      calendarEvents: nextCalEvents,
+      documents: nextDocs,
+      homeworks: nextHomeworks,
+      homeworkSubmissions: nextHwSubs,
+      examPapers: nextExams,
+      achievements: nextAch,
+      attendanceSessions: nextAtt,
+      announcements: nextAnn,
+      chemFeedPosts: nextPosts,
+    });
+
+    if (isSameClass(selectedClassFilter, origId)) {
+      setSelectedClassFilter(newId);
+    }
+    if (isSameClass(rosterFilterClass, origId)) {
+      setRosterFilterClass(newId);
+    }
+    if (isSameClass(calendarFilterClass, origId)) {
+      setCalendarFilterClass(newId);
+    }
+
+    setEditingClassModal(null);
+    notify(`✅ Đã cập nhật thông tin Lớp ${newId} (${newName}) thành công!`, "success");
+  };
+
+  const handleSaveEditedStudent = (e) => {
+    e.preventDefault();
+    if (!editingStudentModal) return;
+
+    const origId = editingStudentModal.originalId;
+    const newId = (editingStudentModal.id || "").trim();
+    const newName = (editingStudentModal.name || "").trim();
+    const newClassId = (editingStudentModal.classId || "")
+      .trim()
+      .toUpperCase();
+
+    if (!newId || !newName || !newClassId) {
+      notify("Vui lòng nhập đầy đủ Mã HS, Họ tên và Lớp học!", "warn");
+      return;
+    }
+
+    if (
+      newId.toLowerCase() !== origId.toLowerCase() &&
+      (appData.students || []).some(
+        (s) => s.id.toLowerCase() === newId.toLowerCase()
+      )
+    ) {
+      notify(`Mã học sinh "${newId}" đã tồn tại! Vui lòng nhập mã khác.`, "warn");
+      return;
+    }
+
+    let nextClasses = [...(appData.classes || [])];
+    let targetCls = nextClasses.find((c) => isSameClass(c.id, newClassId));
+    const resolvedYear =
+      editingStudentModal.academicYear ||
+      targetCls?.academicYear ||
+      appData.currentAcademicYear ||
+      "2026 - 2027";
+
+    if (!targetCls) {
+      let detectedGrade = editingStudentModal.grade || "12";
+      if (newClassId.startsWith("10")) detectedGrade = "10";
+      else if (newClassId.startsWith("11")) detectedGrade = "11";
+      else if (newClassId.startsWith("12")) detectedGrade = "12";
+      targetCls = {
+        id: newClassId,
+        isUserCreated: true,
+        name: `Lớp Hóa ${newClassId}`,
+        grade: detectedGrade,
+        academicYear: resolvedYear,
+        scheduleSummary: "Theo Thời khóa biểu",
+        todayDocIds: [],
+      };
+      nextClasses.push(targetCls);
+    }
+
+    const resolvedGrade =
+      editingStudentModal.grade || targetCls.grade || "12";
+    const parsedScore =
+      editingStudentModal.score !== "" && editingStudentModal.score !== undefined
+        ? Number(editingStudentModal.score)
+        : 0;
+    const parsedAttRate =
+      editingStudentModal.attendanceRate !== "" &&
+      editingStudentModal.attendanceRate !== undefined
+        ? Math.min(100, Math.max(0, Number(editingStudentModal.attendanceRate)))
+        : 100;
+
+    const nextStudents = (appData.students || []).map((s) =>
+      s.id === origId
+        ? {
+            ...s,
+            id: newId,
+            name: newName,
+            classId: targetCls.id,
+            grade: resolvedGrade,
+            academicYear: resolvedYear,
+            email:
+              (editingStudentModal.email || "").trim() ||
+              `${newName.toLowerCase().replace(/\s+/g, "")}@gmail.com`,
+            password: (editingStudentModal.password || "").trim() || "123456",
+            targetScore: (editingStudentModal.targetScore || "").trim() || "8.5+",
+            universityGoal: (editingStudentModal.universityGoal || "").trim(),
+            score: isNaN(parsedScore) ? s.score : parsedScore,
+            attendanceRate: isNaN(parsedAttRate)
+              ? s.attendanceRate
+              : parsedAttRate,
+            attendanceNote:
+              (editingStudentModal.attendanceNote || "").trim() ||
+              "Đi học đầy đủ",
+            attitude:
+              (editingStudentModal.attitude || "").trim() ||
+              "Tập trung chú ý bài giảng",
+            teacherComment:
+              (editingStudentModal.teacherComment || "").trim() ||
+              s.teacherComment,
+          }
+        : s
+    );
+
+    const nextHwSubs = (appData.homeworkSubmissions || []).map((sub) =>
+      sub.studentId === origId
+        ? {
+            ...sub,
+            studentId: newId,
+            studentName: newName,
+            classId: targetCls.id,
+          }
+        : sub
+    );
+
+    const nextHomeworks = (appData.homeworks || []).map((hw) => ({
+      ...hw,
+      targetStudentId:
+        hw.targetStudentId === origId ? newId : hw.targetStudentId,
+      completedBy: (hw.completedBy || []).map((cid) =>
+        cid === origId ? newId : cid
+      ),
+    }));
+
+    const nextCalEvents = (appData.calendarEvents || []).map((ev) =>
+      ev.targetScope === `HS:${origId}`
+        ? {
+            ...ev,
+            targetScope: `HS:${newId}`,
+            ownerName: `Lịch cá nhân: ${newName}`,
+          }
+        : ev
+    );
+
+    saveToAll({
+      ...appData,
+      classes: nextClasses,
+      students: nextStudents,
+      homeworkSubmissions: nextHwSubs,
+      homeworks: nextHomeworks,
+      calendarEvents: nextCalEvents,
+    });
+
+    if (selectedStudentId === origId) {
+      setSelectedStudentId(newId);
+    }
+    setEditingStudentModal(null);
+    notify(
+      `✅ Đã cập nhật thông tin Học sinh ${newName} (Lớp ${targetCls.id})!`,
+      "success"
+    );
+  };
+
+  const handleSaveEditedDocument = (e) => {
+    e.preventDefault();
+    if (!editingDocModal || !editingDocModal.title.trim()) return;
+    const chapList = appData.curriculum?.[editingDocModal.grade] || [];
+    const foundChap = chapList.find((c) => c.id === editingDocModal.chapterId);
+
+    const nextDocs = (appData.documents || []).map((d) =>
+      d.id === editingDocModal.id
+        ? {
+            ...d,
+            title: editingDocModal.title.trim(),
+            grade: editingDocModal.grade,
+            classId: editingDocModal.classId,
+            chapterId: editingDocModal.chapterId,
+            chapterTitle: foundChap
+              ? foundChap.title
+              : editingDocModal.chapterTitle || "Tài liệu chuyên đề",
+            externalUrl: (editingDocModal.externalUrl || "").trim(),
+            note: (editingDocModal.note || "").trim(),
+            fileName: editingDocModal.fileName || d.fileName,
+            fileType: editingDocModal.fileType || d.fileType,
+            fileDataUrl: editingDocModal.fileDataUrl || d.fileDataUrl,
+          }
+        : d
+    );
+    saveToAll({
+      ...appData,
+      documents: nextDocs,
+    });
+    setEditingDocModal(null);
+    notify("Đã cập nhật thông tin tài liệu học tập!", "success");
+  };
+
+  const handleDeleteDocument = (docOrId) => {
+    const doc = typeof docOrId === "string" ? ((appData.documents || []).find((d) => d.id === docOrId) || { id: docOrId, title: docOrId }) : docOrId;
+    askConfirm(
+      `Bạn có chắc chắn muốn xóa tài liệu "${doc.title}" khỏi Kho tài liệu không?`,
+      () => {
+        saveToAll({
+          ...appData,
+          documents: (appData.documents || []).filter((d) => d.id !== doc.id),
+        });
+        notify(`Đã xóa tài liệu "${doc.title}".`, "info");
+      }
     );
   };
 
@@ -3566,7 +4052,7 @@ Email: ${TEACHER_INFO.email}`;
     };
   };
 
-  // Danh sách các Ô chức năng Bento Grid
+  // Danh sách các Ô chức năng Bento Grid (Đã tách riêng 05A Tài liệu & 05B Bài tập)
   const BENTO_MODULES = [
     {
       id: "announcements",
@@ -3584,8 +4070,8 @@ Email: ${TEACHER_INFO.email}`;
     {
       id: "calendar",
       code: "02",
-      title: "Thời khóa biểu & Đính kèm Tài liệu",
-      desc: "Đồng bộ lịch thực, đổi giờ theo tuần và đính kèm trực tiếp tài liệu học hôm đó vào từng ca học.",
+      title: "Thời khóa biểu, Điểm danh Live & Tài liệu",
+      desc: "Đồng bộ lịch thực, điểm danh trực tiếp khi lớp đang diễn ra lúc tạo lịch và đính kèm tài liệu buổi học.",
       badge: `${
         (appData.calendarEvents || []).filter((e) =>
           matchesSelectedYear(e.academicYear)
@@ -3617,14 +4103,23 @@ Email: ${TEACHER_INFO.email}`;
     },
     {
       id: "documents",
-      code: "05",
-      title: "Kho Tài liệu Lớp/Chương & Giao Bài tập",
-      desc: "Tải tài liệu theo từng lớp & từng chương (tự động báo tin tức Học thuật); giao & nộp bài tập qua Mail.",
-      badge: `${(appData.documents || []).length} TL • ${
-        (appData.homeworks || []).length
-      } BTVN`,
+      code: "05A",
+      title: "Kho Tài liệu Lớp/Chương (Tải Tài liệu Riêng)",
+      desc: "Ô riêng chuyên tải tài liệu học tập theo từng lớp & từng chương (tự động báo tin tức Học thuật Mục 01 & đồng bộ Mục 03).",
+      badge: `${(appData.documents || []).length} tài liệu`,
       bg: "bg-white text-[#1B3B48] border border-[#E2DFD7]",
       accent: "text-[#5C7667]",
+    },
+    {
+      id: "homeworks",
+      code: "05B",
+      title: "Giao Bài Tập, Nộp Bài & Chấm Điểm Riêng",
+      desc: "Ô riêng chuyên giao bài tập qua Email (cài giờ tự khóa link nộp), cổng học sinh nộp bài và chấm điểm đồng bộ Hồ sơ Mục 04.",
+      badge: `${(appData.homeworks || []).length} BTVN • ${
+        (appData.homeworkSubmissions || []).length
+      } bài nộp`,
+      bg: "bg-[#2C4A3E] text-[#F7F6F2] border border-[#5C7667]",
+      accent: "text-[#E9C46A]",
     },
     {
       id: "exams",
@@ -3658,8 +4153,8 @@ Email: ${TEACHER_INFO.email}`;
           {
             id: "students_admin",
             code: "09",
-            title: "Quản lý Lớp, Năm học, Điểm danh & Excel",
-            desc: "Quản lý năm học, tạo/xóa lớp, đính kèm tài liệu buổi học, điểm danh nhanh và nhập Excel hàng loạt.",
+            title: "Quản lý & Sửa Lớp, Học sinh, Điểm danh & Excel",
+            desc: "Tạo/sửa/xóa lớp học, chỉnh sửa thông tin học sinh sau khi tạo, điểm danh nhanh và nhập Excel hàng loạt.",
             badge: `${yearFilteredClasses.length} lớp • ${yearFilteredStudents.length} HS`,
             bg: "bg-[#3D405B] text-[#F7F6F2]",
             accent: "text-[#F2CC8F]",
@@ -3677,7 +4172,6 @@ Email: ${TEACHER_INFO.email}`;
     },
   ];
 
-  // Tổng hợp danh sách Bảng vàng (kết hợp `appData.achievements` và các học sinh có điểm kiểm tra cao trong lớp)
   const topClassScorers = (appData.students || [])
     .filter((s) => Number(s.score) >= 8.5)
     .map((s) => ({
@@ -3694,6 +4188,441 @@ Email: ${TEACHER_INFO.email}`;
     }));
 
   const combinedHonorBoard = [...(appData.achievements || []), ...topClassScorers];
+
+
+  // ============================================================================
+  // CẦU NỐI ĐỒNG BỘ TRẠNG THÁI & HÀM XỬ LÝ CHO TOÀN BỘ 10 PHÂN HỆ (01 -> 10)
+  // ============================================================================
+  const userRole = currentUser?.role || "teacher";
+  const currentStudentId = currentUser?.studentId || activeStudent?.id || "";
+  const currentClock = realTimeNow;
+  const cloudSyncStatus = syncStatus;
+  const lastCloudSyncTime = lastSyncTime;
+
+  const setActiveView = (v) => {
+    if (v === "home") {
+      setNavStack(["home"]);
+    } else {
+      navigateTo(v);
+    }
+  };
+
+  const classesList = appData.classes || [];
+  const students = appData.students || [];
+  const academicYears = appData.academicYears || DEFAULT_ACADEMIC_YEARS;
+  const timeSlots = activeTimeSlots;
+
+  const calendarEvents = (appData.calendarEvents || []).map((ev) => ({
+    ...ev,
+    day: ev.day || ev.dayOfWeek || "Thứ Hai",
+    classId: ev.classId || ev.targetScope || "ALL",
+    grade: Number(ev.grade || 12),
+    type: String(ev.targetScope || "").startsWith("HS:")
+      ? "personal"
+      : ev.type || "class",
+    ownerId: String(ev.targetScope || "").startsWith("HS:")
+      ? String(ev.targetScope).slice(3)
+      : ev.ownerId || "",
+  }));
+
+  const documents = (appData.documents || []).map((d) => ({
+    ...d,
+    url: d.url || d.externalUrl || "#",
+    chapter: d.chapter || d.chapterTitle || "Chuyên đề Hóa học",
+    type: d.type || d.fileType || "PDF Chuyên đề",
+    size: d.size || "PDF",
+    updatedAt: d.updatedAt || d.createdAt || "",
+  }));
+
+  const homeworks = appData.homeworks || [];
+  const homeworkSubmissions = (appData.homeworkSubmissions || []).map((s) => ({
+    ...s,
+    score: s.score !== undefined && s.score !== "" ? s.score : s.gradeScore,
+    status:
+      (s.gradeScore !== "" && s.gradeScore !== undefined) ||
+      s.status === "graded"
+        ? "graded"
+        : "pending",
+    answerText: s.answerText || s.studentNote || "",
+  }));
+
+  const examPapers = (appData.examPapers || []).map((ex) => ({
+    ...ex,
+    grade: Number(ex.grade || 12),
+    category: ex.category || ex.examCategory || "THPT_QG",
+    questionCount: ex.questionCount || 40,
+    deadline: ex.deadline || "Đang mở",
+    examAppLink: ex.examAppLink || ex.appLink || ex.fileUrl || "",
+  }));
+
+  const chemFeedPosts = appData.chemFeedPosts || [];
+
+  const curriculumData = {
+    10: (appData.curriculum?.["10"] || DEFAULT_CURRICULUM["10"] || []).map(
+      (c) => ({
+        ...c,
+        code: c.code || c.id,
+        lessons: c.lessons || c.timeline || "",
+        yccd: c.yccd || c.requirements || [],
+      })
+    ),
+    11: (appData.curriculum?.["11"] || DEFAULT_CURRICULUM["11"] || []).map(
+      (c) => ({
+        ...c,
+        code: c.code || c.id,
+        lessons: c.lessons || c.timeline || "",
+        yccd: c.yccd || c.requirements || [],
+      })
+    ),
+    12: (appData.curriculum?.["12"] || DEFAULT_CURRICULUM["12"] || []).map(
+      (c) => ({
+        ...c,
+        code: c.code || c.id,
+        lessons: c.lessons || c.timeline || "",
+        yccd: c.yccd || c.requirements || [],
+      })
+    ),
+  };
+
+  const selectedStudent = activeStudent || {
+    id: "HS01",
+    name: "Chưa có học sinh",
+    classId: classesList[0]?.id || "12A1",
+    grade: 12,
+    score: 0,
+    targetScore: 9.0,
+    universityGoal: "ĐH Y Dược",
+    attendanceRate: 100,
+    attendanceNote: "Đi học đầy đủ",
+    attitude: "Tích cực",
+    teacherComment: "Chưa có nhận xét",
+    inClassTests: [],
+  };
+
+  const weekDatesList = activeWeekInfo.days.map((d) => ({
+    dayName: d.dayOfWeek,
+    dateISO: d.dateKey,
+    shortLabel: d.shortDate,
+    isToday: d.isToday,
+  }));
+
+  const getEventRealtimeStatus = (ev, nowObj) => {
+    const dayObj = activeWeekInfo.days.find(
+      (d) => d.dayOfWeek === (ev.day || ev.dayOfWeek)
+    );
+    const dKey = ev.dateISO || (dayObj ? dayObj.dateKey : toDateKey(nowObj));
+    const st = getLiveSessionStatus(dKey, ev.startTime, ev.endTime, nowObj);
+    return st ? { ...st, badgeClass: st.color } : null;
+  };
+
+  const handleAddTimeSlot = handleAddCustomTimeSlot;
+
+  const handleDeleteEvent = (evId) => {
+    saveToAll({
+      ...appData,
+      calendarEvents: (appData.calendarEvents || []).filter(
+        (x) => x.id !== evId
+      ),
+    });
+    notify("Đã xóa ca học khỏi lịch.", "info");
+  };
+
+  const initCalFormAttendanceForClass = (cid) => {
+    const list =
+      cid === "ALL" ? appData.students || [] : getStudentsOfClass(cid);
+    const recs = list.map((s) => ({
+      studentId: s.id,
+      studentName: s.name,
+      status: "present",
+      note: "Chú ý nghe giảng",
+    }));
+    setCalFormAttendanceRecords(recs);
+  };
+
+  const handleDeleteCurriculumChapter = (gradeNum, chapCode) => {
+    const g = String(gradeNum);
+    const nextList = (appData.curriculum?.[g] || []).filter(
+      (c) => (c.code || c.id) !== chapCode
+    );
+    saveToAll({
+      ...appData,
+      curriculum: {
+        ...appData.curriculum,
+        [g]: nextList,
+      },
+    });
+    notify(`Đã xóa chương ${chapCode} khỏi Khối ${g}.`, "info");
+  };
+
+  const [testForm, setTestFormState] = useState({
+    testName: "",
+    score: "",
+    note: "",
+  });
+  const setTestForm = (nextVal) => {
+    setTestFormState(nextVal);
+    setClassTestForm((prev) => ({
+      ...prev,
+      testName: nextVal.testName || "",
+      score: nextVal.score || "",
+      teacherNote: nextVal.note || "",
+    }));
+  };
+
+  const [docUploadForm, setDocUploadFormState] = useState({
+    grade: 12,
+    classId: "ALL",
+    chapter:
+      DEFAULT_CURRICULUM["12"]?.[0]?.title || "Chương 1: Ester – Lipid",
+    title: "",
+    type: "PDF Chuyên đề",
+    size: "2.0 MB",
+    url: "",
+    fileName: "",
+    fileDataUrl: "",
+  });
+  const setDocUploadForm = (updater) => {
+    setDocUploadFormState((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      setDocForm((dPrev) => ({
+        ...dPrev,
+        grade: String(next.grade || 12),
+        classId: next.classId || "ALL",
+        title: next.title || "",
+        externalUrl: next.url || "",
+        fileName: next.fileName || "",
+        fileType: next.type || "PDF Chuyên đề",
+        fileDataUrl: next.fileDataUrl || "",
+      }));
+      return next;
+    });
+  };
+
+  const isHomeworkPastDeadline = (hw, nowObj) =>
+    getHomeworkDeadlineStatus(hw, nowObj).isExpired;
+  const formatDeadlineCountdown = (hw, nowObj) => {
+    const st = getHomeworkDeadlineStatus(hw, nowObj);
+    return st.remainingText || st.label;
+  };
+
+  const hwSubmitForm = {
+    homeworkId: hwSubForm.homeworkId,
+    answerText: hwSubForm.studentNote,
+    fileName: hwSubForm.fileName,
+    fileDataUrl: hwSubForm.fileDataUrl,
+  };
+  const setHwSubmitForm = (updater) => {
+    setHwSubForm((prev) => {
+      const mappedPrev = {
+        homeworkId: prev.homeworkId,
+        answerText: prev.studentNote,
+        fileName: prev.fileName,
+        fileDataUrl: prev.fileDataUrl,
+      };
+      const next =
+        typeof updater === "function" ? updater(mappedPrev) : updater;
+      return {
+        ...prev,
+        homeworkId: next.homeworkId ?? prev.homeworkId,
+        studentNote: next.answerText ?? prev.studentNote,
+        fileName: next.fileName ?? prev.fileName,
+        fileDataUrl: next.fileDataUrl ?? prev.fileDataUrl,
+      };
+    });
+  };
+
+  const selectedHwForTracking = selectedTrackerHwId;
+  const setSelectedHwForTracking = setSelectedTrackerHwId;
+  const gradingBuffer = gradingInputs;
+  const setGradingBuffer = setGradingInputs;
+
+  const [selectedRefTab, setSelectedRefTab] = useState("fatty_acids");
+  const [showBulkImportBox, setShowBulkImportBox] = useState(false);
+  const [bulkImportClassId, setBulkImportClassId] = useState("12A1");
+  const bulkImportText = excelBulkText;
+  const setBulkImportText = setExcelBulkText;
+
+  const newStudentForm = singleStudent;
+  const setNewStudentForm = setSingleStudent;
+
+  const handleAddClass = (e) => {
+    e.preventDefault();
+    const cid = (newClassForm.id || "").trim().toUpperCase();
+    const cname = (newClassForm.name || "").trim();
+    if (!cid || !cname) return;
+    if ((appData.classes || []).some((c) => isSameClass(c.id, cid))) {
+      notify(`Mã lớp ${cid} đã tồn tại!`, "warn");
+      return;
+    }
+    const newCls = {
+      id: cid,
+      name: cname,
+      grade: String(newClassForm.grade || "12"),
+      academicYear:
+        newClassForm.academicYear ||
+        appData.currentAcademicYear ||
+        "2026 - 2027",
+      scheduleSummary:
+        (newClassForm.scheduleSummary || "").trim() || "Theo Thời khóa biểu",
+      todayDocIds: [],
+    };
+    saveToAll({
+      ...appData,
+      classes: [...(appData.classes || []), newCls],
+    });
+    setNewClassForm({
+      ...newClassForm,
+      id: "",
+      name: "",
+      scheduleSummary: "",
+    });
+    notify(`✅ Đã tạo Lớp ${cid} (${cname}) thành công!`, "success");
+  };
+
+  const handleAddStudentAccount = (e) => {
+    e.preventDefault();
+    if (!singleStudent.name.trim()) return;
+    const cid = (singleStudent.classId || "12A1").trim().toUpperCase();
+    const foundCls = (appData.classes || []).find((c) =>
+      isSameClass(c.id, cid)
+    );
+    const newSt = {
+      id: "HS" + Date.now().toString().slice(-5),
+      name: singleStudent.name.trim(),
+      classId: cid,
+      grade: foundCls ? foundCls.grade : "12",
+      academicYear:
+        foundCls?.academicYear ||
+        appData.currentAcademicYear ||
+        "2026 - 2027",
+      email:
+        singleStudent.email.trim() ||
+        `${singleStudent.name
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, "")}@gmail.com`,
+      password: singleStudent.password.trim() || "123456",
+      targetScore: singleStudent.targetScore || "8.5+",
+      universityGoal: singleStudent.universityGoal || "Đỗ Nguyện vọng 1",
+      score: 0,
+      attendanceRate: 100,
+      attendanceNote: "Đi học đầy đủ",
+      attitude: "Chú ý nghe giảng",
+      teacherComment: "Đã khởi tạo hồ sơ học tập.",
+      inClassTests: [],
+      scoreHistory: [],
+      attendanceHistory: [],
+    };
+    saveToAll({
+      ...appData,
+      students: [...(appData.students || []), newSt],
+    });
+    setSingleStudent({
+      ...singleStudent,
+      name: "",
+      email: "",
+      password: "",
+      universityGoal: "",
+    });
+    notify(`✅ Đã cấp tài khoản cho Học sinh ${newSt.name}!`, "success");
+  };
+
+  const handleDeleteStudent = (studentId) => {
+    const st = (appData.students || []).find((s) => s.id === studentId);
+    askConfirm(
+      `Bạn có chắc chắn muốn xóa Học sinh ${st ? st.name : studentId} không?`,
+      () => {
+        saveToAll({
+          ...appData,
+          students: (appData.students || []).filter((s) => s.id !== studentId),
+        });
+        notify("Đã xóa học sinh khỏi danh sách.", "info");
+      }
+    );
+  };
+
+  const handleAddExamPaper = (e) => {
+    e.preventDefault();
+    if (!examForm.title.trim()) return;
+    const newEx = {
+      id: "EX_" + Date.now(),
+      title: examForm.title.trim(),
+      grade: examForm.grade || 12,
+      classId: examForm.classId || "ALL",
+      examCategory: examForm.category || examForm.examCategory || "THPT_QG",
+      duration: examForm.duration || 50,
+      appLink: examForm.examAppLink || examForm.appLink || "",
+      createdAt: new Date().toLocaleDateString("vi-VN"),
+    };
+    saveToAll({
+      ...appData,
+      examPapers: [newEx, ...(appData.examPapers || [])],
+    });
+    setExamForm({ ...examForm, title: "", examAppLink: "" });
+    notify("Đã đăng đề thi mới lên Ngân hàng đề!", "success");
+  };
+
+  const handleDeleteExamPaper = (exId) => {
+    saveToAll({
+      ...appData,
+      examPapers: (appData.examPapers || []).filter((x) => x.id !== exId),
+    });
+    notify("Đã xóa đề thi.", "info");
+  };
+
+  const handleDeleteAchievement = (achId) => {
+    saveToAll({
+      ...appData,
+      achievements: (appData.achievements || []).filter((x) => x.id !== achId),
+    });
+    notify("Đã xóa mục vinh danh.", "info");
+  };
+
+  const [attendanceDate, setAttendanceDate] = useState(() =>
+    toDateKey(new Date())
+  );
+  const attendanceLessonTitle = sessionTopic;
+  const setAttendanceLessonTitle = setSessionTopic;
+
+  const attendanceDraftRecords = attendanceModalClass
+    ? (attendanceModalClass.id === "ALL"
+        ? appData.students || []
+        : getStudentsOfClass(attendanceModalClass.id)
+      ).map((st) => {
+        const rec = sessionRecords[st.id] || {
+          status: "PRESENT",
+          attitude: "Chú ý nghe giảng",
+        };
+        const mapSt =
+          rec.status === "PRESENT"
+            ? "present"
+            : rec.status === "LATE"
+            ? "late"
+            : rec.status === "EXCUSED"
+            ? "excused"
+            : rec.status === "UNEXCUSED"
+            ? "unexcused"
+            : rec.status || "present";
+        return {
+          studentId: st.id,
+          studentName: st.name,
+          status: mapSt,
+          note: rec.attitude || "",
+        };
+      })
+    : [];
+
+  const setAttendanceDraftRecords = (nextList) => {
+    const nextMap = { ...sessionRecords };
+    (nextList || []).forEach((item) => {
+      nextMap[item.studentId] = {
+        status: String(item.status || "present").toUpperCase(),
+        attitude: item.note || "Chú ý nghe giảng",
+      };
+    });
+    setSessionRecords(nextMap);
+  };
+
 
   // ============================================================================
   // MÀN HÌNH KHI CHƯA ĐĂNG NHẬP (HIỂN THỊ BẢNG VÀNG THÀNH TÍCH BÊN NGOÀI CỔNG ĐĂNG NHẬP)
@@ -3741,7 +4670,6 @@ Email: ${TEACHER_INFO.email}`;
         </header>
 
         <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 space-y-8">
-          {/* KHỐI ĐĂNG NHẬP CHÍNH */}
           <div className="w-full grid grid-cols-1 lg:grid-cols-12 bg-white rounded-3xl border border-[#E2DFD7] shadow-lg overflow-hidden">
             <div className="lg:col-span-6 p-6 sm:p-8 bg-[#EFECE6] flex flex-col justify-between space-y-6">
               <div className="space-y-4">
@@ -3848,9 +4776,6 @@ Email: ${TEACHER_INFO.email}`;
             </div>
           </div>
 
-          {/* ===================================================================
-              BẢNG VÀNG THÀNH TÍCH BÊN NGOÀI MÀN HÌNH ĐĂNG NHẬP
-          =================================================================== */}
           <section className="bg-white rounded-3xl border-2 border-[#E9C46A] shadow-md p-6 sm:p-8 space-y-5">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#EFECE6] pb-4">
               <div className="space-y-1">
@@ -3960,7 +4885,6 @@ Email: ${TEACHER_INFO.email}`;
     );
   }
 
-  // Tổng hợp danh sách Thông báo trên Chuông (Bản tin mới đăng, Bài tập & Hạn nộp, Tài liệu mới, và Bài nộp mới của HS báo cho GV)
   const notificationFeed = [
     ...(appData.announcements || [])
       .filter((a) => {
@@ -3990,7 +4914,7 @@ Email: ${TEACHER_INFO.email}`;
           badge: catMeta.badge,
           title: a.title,
           sub: `${a.targetLabel || a.classId} • ${a.date}`,
-          targetView: a.linkedHomeworkId ? "documents" : "announcements",
+          targetView: a.linkedHomeworkId ? "homeworks" : "announcements",
           category: a.category || "CLASS_NOTICE",
         };
       }),
@@ -4004,7 +4928,7 @@ Email: ${TEACHER_INFO.email}`;
               ? `Đã chấm: ${sub.gradeScore}/10`
               : "Chưa chấm điểm"
           }`,
-          targetView: "documents",
+          targetView: "homeworks",
           category: "SUBMISSION",
         }))
       : []),
@@ -4036,7 +4960,6 @@ Email: ${TEACHER_INFO.email}`;
   // ============================================================================
   return (
     <div className="min-h-screen bg-[#F7F6F2] text-[#1B3B48] flex flex-col font-sans">
-      {/* THÔNG BÁO TOAST NỔI */}
       {toastMsg && (
         <div className="fixed bottom-5 right-5 z-50 max-w-md bg-[#1B3B48] text-white px-4 py-3 rounded-2xl shadow-xl border border-[#E9C46A] flex items-center justify-between gap-3 text-xs font-semibold">
           <span>{toastMsg.text}</span>
@@ -4049,7 +4972,6 @@ Email: ${TEACHER_INFO.email}`;
         </div>
       )}
 
-      {/* HỘP THOẠI XÁC NHẬN */}
       {confirmDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border border-[#E2DFD7]">
@@ -4111,7 +5033,6 @@ Email: ${TEACHER_INFO.email}`;
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* BỘ CHỌN NĂM HỌC TRÊN HEADER */}
             <div className="flex items-center gap-1.5 bg-[#2C4A3E] px-2.5 py-1.5 rounded-lg border border-[#5C7667] text-xs">
               <span className="text-[#E9C46A] font-bold">📅 Năm học:</span>
               <select
@@ -4168,7 +5089,6 @@ Email: ${TEACHER_INFO.email}`;
               </button>
             )}
 
-            {/* CHUÔNG THÔNG BÁO TIN ĐÃ LÊN & BÀI TẬP / NỘP BÀI */}
             <div className="relative">
               <button
                 type="button"
@@ -4275,7 +5195,7 @@ Email: ${TEACHER_INFO.email}`;
                       type="button"
                       onClick={() => {
                         setShowBellDropdown(false);
-                        navigateTo("documents");
+                        navigateTo("homeworks");
                       }}
                       className="font-bold text-[#2C4A3E] hover:underline"
                     >
@@ -4306,7 +5226,7 @@ Email: ${TEACHER_INFO.email}`;
         </div>
       </header>
 
-      {/* THANH ĐIỀU HƯỚNG & NÚT QUAY LẠI TRANG TRƯỚC */}
+      {/* THANH ĐIỀU HƯỚNG */}
       <div className="bg-[#EFECE6] border-b border-[#DFDBD0] px-4 py-2.5">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -4350,9 +5270,7 @@ Email: ${TEACHER_INFO.email}`;
 
       {/* NỘI DUNG CHÍNH */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-6 space-y-8">
-        {/* ===================================================================
-            TRANG CHỦ BẢNG ĐIỀU KHIỂN
-        =================================================================== */}
+        {/* TRANG CHỦ BẢNG ĐIỀU KHIỂN */}
         {activeView === "home" && (
           <div className="space-y-6">
             <div className="bg-white rounded-2xl p-6 border border-[#E2DFD7] shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -4379,33 +5297,33 @@ Email: ${TEACHER_INFO.email}`;
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
-                  onClick={() => navigateTo("curriculum")}
+                  onClick={() => navigateTo("documents")}
                   className="bg-[#2C4A3E] hover:bg-[#1B3B48] text-white px-3.5 py-2 rounded-xl text-xs font-bold transition"
                 >
-                  📚 Lộ trình & Tài liệu Từng Chương
+                  📚 Ô Tải Tài Liệu (Mục 05A)
+                </button>
+                <button
+                  onClick={() => navigateTo("homeworks")}
+                  className="bg-[#1B3B48] hover:bg-[#2C4A3E] text-[#E9C46A] px-3.5 py-2 rounded-xl text-xs font-bold transition"
+                >
+                  📝 Ô Giao Bài Tập (Mục 05B)
                 </button>
                 <button
                   onClick={() => navigateTo("calendar")}
-                  className="bg-[#1B3B48] hover:bg-[#2C4A3E] text-white px-3.5 py-2 rounded-xl text-xs font-bold transition"
+                  className="bg-[#5C7667] hover:bg-[#4A6154] text-white px-3.5 py-2 rounded-xl text-xs font-bold transition"
                 >
-                  📅 Lịch Thực & Tài liệu Buổi học
+                  📅 Lịch Thực & Điểm Danh Live
                 </button>
                 <button
                   onClick={() => navigateTo("chem_feed")}
                   className="bg-[#9C6644] hover:bg-[#7F5135] text-white px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm"
                 >
-                  🔥 Chuyện Hóa Học & Hỏi Đáp (+Điểm)
-                </button>
-                <button
-                  onClick={() => navigateTo("announcements")}
-                  className="bg-[#5C7667] hover:bg-[#4A6154] text-white px-3.5 py-2 rounded-xl text-xs font-bold transition"
-                >
-                  📰 Tin tức (Học thuật • Học phí • Lớp)
+                  🔥 Chuyện Hóa Học (+Điểm)
                 </button>
               </div>
             </div>
 
-            {/* Thanh Tổng quan Danh sách Lớp học, Sĩ số & TÀI LIỆU HỌC HÔM NAY CỦA TỪNG LỚP */}
+            {/* Danh sách Lớp học & Tài liệu học hôm nay */}
             <div className="bg-white rounded-2xl p-5 border border-[#E2DFD7] shadow-sm space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-bold text-sm text-[#1B3B48] uppercase tracking-wider">
@@ -4421,7 +5339,7 @@ Email: ${TEACHER_INFO.email}`;
                     onClick={() => navigateTo("students_admin")}
                     className="text-xs font-bold text-[#5C7667] hover:underline"
                   >
-                    + Tạo lớp mới / Quản lý Năm học / Điểm danh →
+                    + Tạo / Sửa lớp / Quản lý Học sinh / Điểm danh →
                   </button>
                 )}
               </div>
@@ -4432,7 +5350,7 @@ Email: ${TEACHER_INFO.email}`;
                     Chưa có lớp học nào được tạo trong năm học này
                   </div>
                   <p className="text-xs text-[#5C7667]">
-                    Các lớp mẫu đã được xóa sạch. Bạn hãy vào <strong>Mục 09</strong> để tạo các lớp học mới của mình.
+                    Bạn hãy vào <strong>Mục 09</strong> để tạo các lớp học mới của mình.
                   </p>
                   {currentUser.role === "teacher" && (
                     <button
@@ -4476,7 +5394,6 @@ Email: ${TEACHER_INFO.email}`;
                             Khối {cls.grade} • {cls.scheduleSummary}
                           </div>
 
-                          {/* HIỂN THỊ TÀI LIỆU HỌC HÔM ĐÓ TRONG LỚP HỌC */}
                           <div className="p-2.5 rounded-xl bg-white border border-[#DFDBD0] space-y-1.5">
                             <div className="flex items-center justify-between">
                               <span className="text-[11px] font-extrabold text-[#1B3B48]">
@@ -4545,14 +5462,35 @@ Email: ${TEACHER_INFO.email}`;
                         </div>
 
                         {currentUser.role === "teacher" && (
-                          <div className="flex items-center justify-between pt-2 border-t border-[#E2DFD7] text-[11px] font-bold">
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#E2DFD7] text-[11px] font-bold">
                             <button
+                              type="button"
                               onClick={() => openQuickAttendance(cls)}
                               className="text-[#2C4A3E] hover:underline"
                             >
-                              ✓ Điểm danh & TL hôm nay
+                              ✓ Điểm danh & TL
                             </button>
                             <button
+                              type="button"
+                              onClick={() =>
+                                setEditingClassModal({
+                                  originalId: cls.id,
+                                  id: cls.id,
+                                  name: cls.name || "",
+                                  grade: cls.grade || "12",
+                                  academicYear:
+                                    cls.academicYear ||
+                                    appData.currentAcademicYear ||
+                                    "2026 - 2027",
+                                  scheduleSummary: cls.scheduleSummary || "",
+                                })
+                              }
+                              className="text-[#9C6644] hover:underline"
+                            >
+                              ✎ Sửa lớp
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => {
                                 setSelectedClassFilter(cls.id);
                                 navigateTo("progress");
@@ -4562,6 +5500,7 @@ Email: ${TEACHER_INFO.email}`;
                               Xem HS
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDeleteClass(cls)}
                               className="text-red-600 hover:underline"
                             >
@@ -4612,7 +5551,7 @@ Email: ${TEACHER_INFO.email}`;
         )}
 
         {/* ===================================================================
-            MỤC 01: BẢN TIN LỚP HỌC (CHIA 3 MỤC: HỌC THUẬT, HỌC PHÍ, THÔNG BÁO LỚP HỌC)
+            MỤC 01: BẢN TIN LỚP HỌC
         =================================================================== */}
         {activeView === "announcements" && (
           <div className="space-y-6">
@@ -4622,11 +5561,8 @@ Email: ${TEACHER_INFO.email}`;
                   Mục 01 • Truyền thông Lớp học & Tự động cập nhật khi tải Tài liệu
                 </span>
                 <h2 className="text-2xl font-bold text-[#1B3B48]">
-                  Tin tức Phụ huynh Theo dõi: Học thuật • Thông báo Học phí • Thông báo Lớp học
+                  Bản tin Lớp học (Học thuật • Bài tập & Deadline • Học phí • Lớp học)
                 </h2>
-                <p className="text-xs text-[#5C7667] mt-1">
-                  Khi Giáo viên tải một tài liệu mới lên Lộ trình Chương (Mục 03) hoặc Kho Tài liệu (Mục 05), mục Tin tức <strong>📘 Học thuật</strong> sẽ tự động cập nhật ngay.
-                </p>
               </div>
               <button
                 onClick={goBack}
@@ -4636,89 +5572,28 @@ Email: ${TEACHER_INFO.email}`;
               </button>
             </div>
 
-            {/* THANH CHIA CHUYÊN MỤC TIN TỨC (HỌC THUẬT • BÀI TẬP & DEADLINE • HỌC PHÍ • LỚP HỌC) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-              <button
-                type="button"
-                onClick={() => setNewsCategoryFilter("ALL")}
-                className={`p-4 rounded-2xl border text-left transition ${
-                  newsCategoryFilter === "ALL"
-                    ? "bg-[#1B3B48] text-white border-[#1B3B48] shadow-sm"
-                    : "bg-white text-[#1B3B48] border-[#E2DFD7] hover:bg-[#EFECE6]"
-                }`}
-              >
-                <div className="text-xs font-bold uppercase opacity-80">
-                  Tất cả chuyên mục
-                </div>
-                <div className="text-lg font-extrabold mt-1">
-                  📰 Toàn bộ Tin tức (
-                  {
-                    (appData.announcements || []).filter((a) =>
-                      matchesSelectedYear(a.academicYear)
-                    ).length
-                  }
-                  )
-                </div>
-                <div className="text-[11px] opacity-80 mt-1">
-                  Xem tổng hợp cả 3 mục thông báo
-                </div>
-              </button>
-
-              {NEWS_CATEGORIES.map((cat) => {
-                const count = (appData.announcements || []).filter(
-                  (a) =>
-                    matchesSelectedYear(a.academicYear) &&
-                    (a.category || "CLASS_NOTICE") === cat.id
-                ).length;
-                const isSelected = newsCategoryFilter === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => setNewsCategoryFilter(cat.id)}
-                    className={`p-4 rounded-2xl border text-left transition ${
-                      isSelected
-                        ? `${cat.activeBtn} border-transparent shadow-sm`
-                        : "bg-white text-[#1B3B48] border-[#E2DFD7] hover:bg-[#EFECE6]"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold">{cat.badge}</span>
-                      <span className="px-2 py-0.5 rounded-full bg-black/10 text-xs font-black">
-                        {count} tin
-                      </span>
-                    </div>
-                    <div className="text-base font-bold mt-1">{cat.label}</div>
-                    <div className="text-[11px] opacity-85 mt-1 leading-snug">
-                      {cat.desc}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
             {currentUser.role === "teacher" && (
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
                   if (!annForm.title.trim() || !annForm.content.trim()) return;
+                  const activeYear =
+                    selectedAcademicYear === "ALL"
+                      ? appData.currentAcademicYear || "2026 - 2027"
+                      : selectedAcademicYear;
 
-                  let targetSts = [];
+                  let recipients = [];
                   let targetLabel = "";
-
                   if (annForm.sendMode === "INDIVIDUAL") {
-                    const st =
-                      appData.students.find(
-                        (s) => s.id === annForm.targetStudentId
-                      ) || activeStudent;
-                    if (!st) {
-                      notify("Vui lòng chọn 1 Học sinh / Phụ huynh cụ thể!", "warn");
-                      return;
+                    const st = appData.students.find(
+                      (s) => s.id === annForm.targetStudentId
+                    );
+                    if (st) {
+                      recipients = [st];
+                      targetLabel = `HS ${st.name} (${st.classId})`;
                     }
-                    targetSts = [st];
-                    targetLabel = `Riêng HS: ${st.name} (${st.classId})`;
                   } else {
-                    targetSts =
+                    recipients =
                       annForm.classId === "ALL"
                         ? appData.students
                         : appData.students.filter(
@@ -4726,80 +5601,31 @@ Email: ${TEACHER_INFO.email}`;
                           );
                     targetLabel =
                       annForm.classId === "ALL"
-                        ? "Toàn trường"
+                        ? "Toàn bộ các lớp"
                         : `Lớp ${annForm.classId}`;
                   }
 
-                  const activeYear =
-                    selectedAcademicYear === "ALL"
-                      ? appData.currentAcademicYear || "2026 - 2027"
-                      : selectedAcademicYear;
-
-                  const emails = targetSts.map((s) => s.email).filter(Boolean);
-                  const catMeta = getNewsCategoryMeta(annForm.category);
-
                   const newAnn = {
-                    id: "ANN" + Date.now(),
+                    id: "ANN_" + Date.now(),
                     title: annForm.title.trim(),
                     category: annForm.category,
                     academicYear: activeYear,
                     sendMode: annForm.sendMode,
                     classId: annForm.classId,
-                    targetStudentId:
-                      annForm.sendMode === "INDIVIDUAL"
-                        ? annForm.targetStudentId || activeStudent?.id
-                        : "",
+                    targetStudentId: annForm.targetStudentId,
                     targetLabel,
                     content: annForm.content.trim(),
                     attachmentName: annForm.attachmentName,
                     attachmentType: annForm.attachmentType,
                     attachmentDataUrl: annForm.attachmentDataUrl,
                     date: new Date().toLocaleString("vi-VN"),
-                    recipientCount: emails.length,
+                    recipientCount: recipients.length,
                   };
+
                   saveToAll({
                     ...appData,
-                    announcements: [newAnn, ...appData.announcements],
+                    announcements: [newAnn, ...(appData.announcements || [])],
                   });
-
-                  if (annForm.sendEmailNow) {
-                    const subject = `[${catMeta.label} - ${targetLabel}] ${newAnn.title}`;
-                    const body = `Kính gửi Quý Phụ huynh và Học sinh (${targetLabel}),\nChuyên mục: ${catMeta.label} (Năm học ${activeYear})\n\n${newAnn.content}\n\nTrân trọng,\nThầy Dương Anh Tuấn Anh (${TEACHER_INFO.subNote})\nEmail: ${TEACHER_INFO.email}`;
-
-                    if (
-                      annForm.sendMode === "INDIVIDUAL" &&
-                      emails.length > 0
-                    ) {
-                      setEmailPreviewModal({
-                        modeBadge: `Gửi cá nhân tới ${targetLabel}`,
-                        to: emails[0],
-                        subject,
-                        body,
-                        mailtoUrl: `mailto:${encodeURIComponent(
-                          emails[0]
-                        )}?cc=${encodeURIComponent(
-                          TEACHER_INFO.email
-                        )}&subject=${encodeURIComponent(
-                          subject
-                        )}&body=${encodeURIComponent(body)}`,
-                      });
-                    } else {
-                      const bcc = emails.join(",");
-                      setEmailPreviewModal({
-                        modeBadge: `Gửi hàng loạt (${emails.length} PH/HS)`,
-                        to: bcc || TEACHER_INFO.email,
-                        subject,
-                        body,
-                        mailtoUrl: `mailto:${encodeURIComponent(
-                          TEACHER_INFO.email
-                        )}?bcc=${encodeURIComponent(
-                          bcc
-                        )}&subject=${encodeURIComponent(
-                          subject
-                        )}&body=${encodeURIComponent(body)}`,
-                      });
-                    }
-                  }
 
                   setAnnForm({
                     ...annForm,
@@ -4809,66 +5635,14 @@ Email: ${TEACHER_INFO.email}`;
                     attachmentType: "",
                     attachmentDataUrl: "",
                   });
-                  notify(`Đã đăng tin tức vào mục "${catMeta.label}"!`, "success");
+                  notify("Đã đăng bản tin mới thành công!", "success");
                 }}
                 className="bg-white p-6 rounded-2xl border-2 border-[#1B3B48] space-y-4"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
-                  <h3 className="font-bold text-base text-[#1B3B48]">
-                    Soạn Tin tức mới (Chọn chuyên mục: Học thuật / Học phí / Lớp học)
-                  </h3>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setAnnForm({ ...annForm, sendMode: "BULK" })
-                      }
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                        annForm.sendMode === "BULK"
-                          ? "bg-[#1B3B48] text-white"
-                          : "bg-[#EFECE6] text-[#1B3B48]"
-                      }`}
-                    >
-                      📢 Gửi hàng loạt (Theo Lớp / Toàn trường)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setAnnForm({
-                          ...annForm,
-                          sendMode: "INDIVIDUAL",
-                          targetStudentId:
-                            annForm.targetStudentId ||
-                            appData.students[0]?.id ||
-                            "",
-                        })
-                      }
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                        annForm.sendMode === "INDIVIDUAL"
-                          ? "bg-[#2C4A3E] text-white"
-                          : "bg-[#EFECE6] text-[#1B3B48]"
-                      }`}
-                    >
-                      👤 Gửi riêng cho từng HS / PH cụ thể
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <select
-                    value={annForm.category}
-                    onChange={(e) =>
-                      setAnnForm({ ...annForm, category: e.target.value })
-                    }
-                    className="p-2.5 rounded-xl border-2 border-[#1B3B48] text-xs bg-[#F7F6F2] font-extrabold text-[#1B3B48]"
-                  >
-                    {NEWS_CATEGORIES.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        Chuyên mục: {c.badge}
-                      </option>
-                    ))}
-                  </select>
-
+                <h3 className="font-bold text-base text-[#1B3B48]">
+                  ➕ Đăng Bản tin mới & Gửi thông báo cho Phụ huynh / Học sinh
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <input
                     type="text"
                     required
@@ -4876,100 +5650,65 @@ Email: ${TEACHER_INFO.email}`;
                     onChange={(e) =>
                       setAnnForm({ ...annForm, title: e.target.value })
                     }
-                    placeholder="Tiêu đề thông báo / Bản tin..."
-                    className="md:col-span-2 p-2.5 rounded-xl border border-[#E2DFD7] text-sm"
+                    placeholder="Tiêu đề bản tin..."
+                    className="p-2.5 rounded-xl border text-xs"
                   />
-
-                  {annForm.sendMode === "BULK" ? (
-                    <select
-                      value={annForm.classId}
-                      onChange={(e) =>
-                        setAnnForm({ ...annForm, classId: e.target.value })
-                      }
-                      className="p-2.5 rounded-xl border border-[#E2DFD7] text-xs bg-white font-semibold"
-                    >
-                      <option value="ALL">
-                        Gửi: Toàn bộ các lớp ({appData.students.length} HS)
+                  <select
+                    value={annForm.category}
+                    onChange={(e) =>
+                      setAnnForm({ ...annForm, category: e.target.value })
+                    }
+                    className="p-2.5 rounded-xl border text-xs bg-white font-bold"
+                  >
+                    {NEWS_CATEGORIES.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.badge} — {c.label}
                       </option>
-                      {appData.classes.map((c) => {
-                        const cnt = getStudentsOfClass(c.id).length;
-                        return (
-                          <option key={c.id} value={c.id}>
-                            Gửi: Lớp {c.id} ({cnt} HS)
-                          </option>
-                        );
-                      })}
-                    </select>
-                  ) : (
-                    <select
-                      value={annForm.targetStudentId}
-                      onChange={(e) =>
-                        setAnnForm({
-                          ...annForm,
-                          targetStudentId: e.target.value,
-                        })
-                      }
-                      className="p-2.5 rounded-xl border-2 border-[#2C4A3E] text-xs bg-white font-bold text-[#1B3B48]"
-                    >
-                      <option value="">-- Chọn Học sinh / Phụ huynh --</option>
-                      {appData.students.map((st) => (
-                        <option key={st.id} value={st.id}>
-                          {st.name} (Lớp {st.classId} • {st.email})
-                        </option>
-                      ))}
-                    </select>
-                  )}
+                    ))}
+                  </select>
+                  <select
+                    value={annForm.classId}
+                    onChange={(e) =>
+                      setAnnForm({ ...annForm, classId: e.target.value })
+                    }
+                    className="p-2.5 rounded-xl border text-xs bg-white font-bold"
+                  >
+                    <option value="ALL">Gửi toàn bộ các lớp</option>
+                    {appData.classes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        Lớp {c.id} ({c.name})
+                      </option>
+                    ))}
+                  </select>
                 </div>
-
                 <textarea
-                  rows={4}
+                  rows={3}
                   required
                   value={annForm.content}
                   onChange={(e) =>
                     setAnnForm({ ...annForm, content: e.target.value })
                   }
-                  placeholder="Nội dung chi tiết (học thuật / học phí / thông báo lớp học)..."
-                  className="w-full p-3 rounded-xl border border-[#E2DFD7] text-sm"
+                  placeholder="Nội dung chi tiết thông báo..."
+                  className="w-full p-3 rounded-xl border text-xs"
                 />
-
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs font-bold text-[#1B3B48]">
-                        Đính kèm Ảnh / Tài liệu:
-                      </label>
-                      <input
-                        type="file"
-                        onChange={(e) =>
-                          handleFlexibleFileUpload(e, (res) =>
-                            setAnnForm((prev) => ({
-                              ...prev,
-                              attachmentName: res.fileName,
-                              attachmentType: res.fileType,
-                              attachmentDataUrl: res.dataUrl,
-                            }))
-                          )
-                        }
-                        className="text-xs"
-                      />
-                    </div>
-                    <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={annForm.sendEmailNow}
-                        onChange={(e) =>
-                          setAnnForm({
-                            ...annForm,
-                            sendEmailNow: e.target.checked,
-                          })
-                        }
-                      />
-                      <span>Mở kèm trình gửi Email cho PH/HS</span>
-                    </label>
-                  </div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <input
+                    type="file"
+                    onChange={(e) =>
+                      handleFlexibleFileUpload(e, (res) =>
+                        setAnnForm((prev) => ({
+                          ...prev,
+                          attachmentName: res.fileName,
+                          attachmentType: res.fileType,
+                          attachmentDataUrl: res.dataUrl,
+                        }))
+                      )
+                    }
+                    className="text-xs"
+                  />
                   <button
                     type="submit"
-                    className="bg-[#1B3B48] text-white px-5 py-2.5 rounded-xl text-sm font-bold"
+                    className="bg-[#1B3B48] text-[#E9C46A] px-5 py-2.5 rounded-xl text-xs font-bold"
                   >
                     Đăng Bản Tin Lên Hệ Thống
                   </button>
@@ -4977,16 +5716,54 @@ Email: ${TEACHER_INFO.email}`;
               </form>
             )}
 
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setNewsCategoryFilter("ALL")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold ${
+                  newsCategoryFilter === "ALL"
+                    ? "bg-[#1B3B48] text-white"
+                    : "bg-white text-[#1B3B48] border"
+                }`}
+              >
+                Tất cả bản tin
+              </button>
+              {NEWS_CATEGORIES.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setNewsCategoryFilter(cat.id)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold ${
+                    newsCategoryFilter === cat.id
+                      ? cat.activeBtn
+                      : "bg-white text-[#1B3B48] border"
+                  }`}
+                >
+                  {cat.badge}
+                </button>
+              ))}
+            </div>
+
             <div className="space-y-4">
-              {appData.announcements
+              {(appData.announcements || [])
                 .filter((a) => {
                   if (!matchesSelectedYear(a.academicYear)) return false;
-                  const cat = a.category || "CLASS_NOTICE";
                   if (
                     newsCategoryFilter !== "ALL" &&
-                    cat !== newsCategoryFilter
-                  ) {
+                    (a.category || "CLASS_NOTICE") !== newsCategoryFilter
+                  )
                     return false;
+                  if (currentUser.role === "student") {
+                    if (
+                      a.sendMode === "INDIVIDUAL" &&
+                      a.targetStudentId &&
+                      a.targetStudentId !== currentUser.studentId
+                    )
+                      return false;
+                    if (
+                      a.sendMode === "BULK" &&
+                      a.classId !== "ALL" &&
+                      a.classId !== currentUser.classId
+                    )
+                      return false;
                   }
                   return true;
                 })
@@ -4999,50 +5776,41 @@ Email: ${TEACHER_INFO.email}`;
                       key={a.id}
                       className="bg-white p-5 rounded-2xl border border-[#E2DFD7] shadow-sm space-y-2.5"
                     >
-                      <div className="flex flex-wrap justify-between items-center gap-2">
-                        <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
                           <span
-                            className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold border ${catMeta.color}`}
+                            className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${catMeta.color}`}
                           >
                             {catMeta.badge}
                           </span>
-                          <span className="px-2.5 py-0.5 rounded bg-[#1B3B48] text-white text-xs font-bold">
-                            {a.targetLabel || a.classId}
+                          <span className="text-xs font-bold text-[#5C7667]">
+                            {a.targetLabel || a.classId} • {a.date}
                           </span>
-                          {a.academicYear && (
-                            <span className="text-[11px] font-bold text-[#5C7667] bg-[#F7F6F2] px-2 py-0.5 rounded border border-[#E2DFD7]">
-                              Năm học: {a.academicYear}
-                            </span>
-                          )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-[#5C7667]">{a.date}</span>
-                          {currentUser.role === "teacher" && (
-                            <button
-                              onClick={() =>
-                                saveToAll({
-                                  ...appData,
-                                  announcements: appData.announcements.filter(
-                                    (x) => x.id !== a.id
-                                  ),
-                                })
-                              }
-                              className="text-xs text-red-600 font-bold hover:underline"
-                            >
-                              Xóa
-                            </button>
-                          )}
-                        </div>
+                        {currentUser.role === "teacher" && (
+                          <button
+                            onClick={() =>
+                              saveToAll({
+                                ...appData,
+                                announcements: appData.announcements.filter(
+                                  (x) => x.id !== a.id
+                                ),
+                              })
+                            }
+                            className="text-xs text-red-600 font-bold hover:underline"
+                          >
+                            Xóa
+                          </button>
+                        )}
                       </div>
                       <h4 className="font-bold text-base text-[#1B3B48]">
                         {a.title}
                       </h4>
-                      <p className="text-sm whitespace-pre-line leading-relaxed text-[#1B3B48]/90">
+                      <p className="text-xs text-[#1B3B48]/90 whitespace-pre-wrap leading-relaxed">
                         {a.content}
                       </p>
-
                       {(a.externalUrl || a.attachmentDataUrl) && (
-                        <div className="pt-2 flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap gap-2 pt-2">
                           {a.externalUrl && (
                             <a
                               href={a.externalUrl}
@@ -5050,7 +5818,7 @@ Email: ${TEACHER_INFO.email}`;
                               rel="noreferrer"
                               className="px-3 py-1.5 rounded-xl bg-[#1B3B48] text-white text-xs font-bold"
                             >
-                              🔗 Mở Link Tài liệu đính kèm
+                              🔗 Mở đường link đính kèm
                             </a>
                           )}
                           {a.attachmentDataUrl && (
@@ -5071,206 +5839,235 @@ Email: ${TEACHER_INFO.email}`;
           </div>
         )}
 
-        {/* ===================================================================
-            MỤC 02: THỜI KHÓA BIỂU LỊCH THỰC, ĐỔI GIỜ LINH HOẠT & ĐÍNH KÈM TÀI LIỆU HÔM ĐÓ
-        =================================================================== */}
+
+        {/* ============================================================ */}
+        {/* MỤC 02: LỊCH HỌC TRỰC TUYẾN & ĐIỂM DANH CA HỌC ĐANG DIỄN RA  */}
+        {/* ============================================================ */}
         {activeView === "calendar" && (
           <div className="space-y-6">
-            {/* THANH ĐỒNG HỒ THỜI GIAN THỰC & ĐIỀU HƯỚNG TUẦN THỰC TẾ */}
-            <div className="bg-white p-6 rounded-2xl border border-[#E2DFD7] shadow-sm space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-extrabold">
-                      ● ĐỒNG BỘ THỜI GIAN THỰC
-                    </span>
-                    <span className="text-xs font-mono font-bold text-[#1B3B48] bg-[#EFECE6] px-3 py-1 rounded-lg">
-                      🕒 Bây giờ: {realTimeNow.toLocaleTimeString("vi-VN")} —{" "}
-                      {realTimeNow.toLocaleDateString("vi-VN", {
-                        weekday: "long",
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                      })}
-                    </span>
-                  </div>
-                  <h2 className="text-2xl font-bold text-[#1B3B48] mt-2">
-                    Thời khóa biểu Bảng Lịch Thực & Đính kèm Tài liệu Học Hôm Đó
-                  </h2>
-                  <p className="text-xs text-[#5C7667] mt-0.5">
-                    Mỗi buổi học trên lịch đều có thể đính kèm tài liệu học hôm đó (chọn từ Kho tài liệu chương hoặc tải file/link mới).
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E5E0D8] pb-4">
+              <div>
+                <span className="text-xs font-mono uppercase tracking-widest text-[#9C6644] block mb-1">
+                  MỤC 02 // REAL-TIME SCHEDULE & LIVE ATTENDANCE
+                </span>
+                <h2 className="text-2xl font-serif font-bold text-[#1B3B48]">
+                  Lịch học Trực tuyến, Tạo lịch & Điểm danh Ca học Đang diễn ra
+                </h2>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {userRole === "teacher" && (
                   <button
                     onClick={() => setShowSlotManager(!showSlotManager)}
-                    className="px-3.5 py-2 rounded-xl bg-[#2C4A3E] text-white text-xs font-bold hover:bg-[#1B3B48] transition"
+                    className="px-4 py-2 rounded-lg text-xs font-medium bg-[#EFECE6] text-[#1B3B48] hover:bg-[#E5E0D8] transition-colors border border-[#D5CFC4]"
                   >
-                    ⚙️ Quản lý / Tạo Khung Giờ (Cột trái)
+                    ⚙ Quản lý Khung giờ ({timeSlots.length} ca)
                   </button>
-                  <button
-                    onClick={goBack}
-                    className="px-4 py-2 rounded-xl bg-[#EFECE6] text-[#1B3B48] text-xs font-bold hover:bg-[#E2DFD7]"
-                  >
-                    ← Quay lại
-                  </button>
-                </div>
-              </div>
-
-              {/* Thanh Chuyển đổi Tuần */}
-              <div className="p-3.5 rounded-2xl bg-[#1B3B48] text-white flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setSelectedWeekOffset((w) => w - 1)}
-                    className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-bold transition"
-                  >
-                    ← Tuần trước
-                  </button>
-                  <button
-                    onClick={() => setSelectedWeekOffset(0)}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
-                      selectedWeekOffset === 0
-                        ? "bg-[#E9C46A] text-[#1B3B48]"
-                        : "bg-white/10 hover:bg-white/20 text-white"
-                    }`}
-                  >
-                    📍 Tuần Hiện Tại (Hôm nay)
-                  </button>
-                  <button
-                    onClick={() => setSelectedWeekOffset((w) => w + 1)}
-                    className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-bold transition"
-                  >
-                    Tuần kế tiếp →
-                  </button>
-                </div>
-
-                <div className="text-center">
-                  <span className="text-xs uppercase tracking-wider text-[#E9C46A] font-bold block">
-                    {selectedWeekOffset === 0
-                      ? "Đang xem: Tuần hiện tại"
-                      : selectedWeekOffset > 0
-                      ? `Đang xem: +${selectedWeekOffset} tuần sau`
-                      : `Đang xem: ${Math.abs(selectedWeekOffset)} tuần trước`}
-                  </span>
-                  <span className="text-sm sm:text-base font-extrabold">
-                    📅 {activeWeekInfo.weekLabel}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    onChange={(e) => {
-                      if (!e.target.value) return;
-                      const picked = new Date(e.target.value);
-                      const pickedMon = getMondayOfDate(picked);
-                      const curMon = getMondayOfDate(new Date());
-                      const diffWeeks = Math.round(
-                        (pickedMon.getTime() - curMon.getTime()) /
-                          (7 * 24 * 3600 * 1000)
-                      );
-                      setSelectedWeekOffset(diffWeeks);
-                    }}
-                    className="px-2.5 py-1 rounded-lg text-xs text-[#1B3B48] bg-white font-semibold"
-                    title="Chọn ngày bất kỳ để nhảy tới tuần đó"
-                  />
-                  {currentUser.role === "teacher" && (
-                    <button
-                      onClick={handleCopyWeekToNextWeek}
-                      className="px-3 py-1.5 rounded-xl bg-[#5C7667] hover:bg-[#4A6154] text-white text-xs font-bold transition"
-                      title="Sao chép lịch tuần này sang tuần sau"
-                    >
-                      📋 Sao chép sang tuần sau
-                    </button>
-                  )}
-                </div>
+                )}
+                <button
+                  onClick={() => setActiveView("home")}
+                  className="text-sm text-[#5C7667] hover:text-[#1B3B48] font-medium px-3 py-2 rounded-lg border border-[#E5E0D8] bg-white"
+                >
+                  ← Quay lại Trang chủ
+                </button>
               </div>
             </div>
 
-            {/* KHUNG QUẢN LÝ / THÊM HÀNG KHUNG GIỜ LINH HOẠT Ở CỘT BÊN TRÁI */}
-            {showSlotManager && (
-              <div className="bg-white p-6 rounded-2xl border-2 border-[#2C4A3E] space-y-4 shadow-sm">
-                <div className="flex items-center justify-between border-b pb-3">
-                  <div>
-                    <h3 className="font-bold text-base text-[#1B3B48]">
-                      ⚙️ Quản lý Các Hàng Khung Giờ (Cột bên trái Bảng lịch)
-                    </h3>
-                    <p className="text-xs text-[#5C7667]">
-                      Bạn có thể tạo thêm các khung giờ riêng (VD: Ca Tối 21:00 - 22:00) hoặc xóa các khung giờ không dùng tới.
-                    </p>
+            {/* BANNER NỔI BẬT: CÁC LỚP HỌC ĐANG DIỄN RA NGAY LÚC NÀY (CHO PHÉP ĐIỂM DANH TRỰC TIẾP) */}
+            {(() => {
+              const liveEventsNow = calendarEvents.filter((ev) => {
+                if (ev.type === "personal") return false;
+                const st = getEventRealtimeStatus(ev, currentClock);
+                return st?.code === "LIVE";
+              });
+              if (liveEventsNow.length === 0) return null;
+              return (
+                <div className="bg-emerald-950 text-white rounded-2xl p-5 shadow-lg border-2 border-emerald-400">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500 text-white text-xs font-bold uppercase tracking-wider mb-2">
+                        🟢 ĐANG DIỄN RA NGAY LÚC NÀY ({liveEventsNow.length} CA HỌC)
+                      </span>
+                      <h3 className="text-lg font-serif font-bold">
+                        Ca học đang trong khung giờ hoạt động — Có thể Điểm danh HS trực tiếp!
+                      </h3>
+                      <p className="text-xs text-emerald-200 mt-0.5">
+                        Hệ thống tự động nhận diện ca học đang diễn ra theo giờ thực tế để giáo viên điểm danh ngay lập tức.
+                      </p>
+                    </div>
                   </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                    {liveEventsNow.map((ev) => {
+                      const cls = classesList.find((c) => c.id === ev.classId);
+                      return (
+                        <div
+                          key={ev.id}
+                          className="bg-white/10 backdrop-blur-sm border border-emerald-400/40 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/30 text-emerald-200">
+                                {ev.classId || `Khối ${ev.grade}`}
+                              </span>
+                              <span className="text-xs text-emerald-200 font-mono">
+                                ⏰ {ev.startTime || "18:00"} - {ev.endTime || "19:30"} ({ev.dateISO})
+                              </span>
+                            </div>
+                            <h4 className="font-bold text-sm text-white mt-1">{ev.title}</h4>
+                            {cls && (
+                              <p className="text-[11px] text-emerald-200 mt-0.5">
+                                Lớp: {cls.name} • Sĩ số: {students.filter((s) => s.classId === cls.id).length} HS
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {ev.meetLink && (
+                              <a
+                                href={ev.meetLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-3 py-2 rounded-lg bg-white text-emerald-950 text-xs font-bold hover:bg-emerald-100"
+                              >
+                                🎥 Vào phòng học
+                              </a>
+                            )}
+                            {userRole === "teacher" && (
+                              <button
+                                onClick={() => openAttendanceFromCalendarEvent(ev)}
+                                className="px-3.5 py-2 rounded-lg bg-[#E9C46A] text-[#1B3B48] text-xs font-bold hover:bg-[#f0d182] shadow"
+                              >
+                                ✓ Điểm danh HS ngay
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Thanh điều hướng tuần & Đồng hồ thời gian thực */}
+            <div className="bg-white rounded-2xl p-4 border border-[#E5E0D8] shadow-sm flex flex-col lg:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full bg-emerald-500 animate-ping" />
+                <div>
+                  <span className="text-[11px] font-mono uppercase tracking-wider text-stone-400 block">
+                    ĐỒNG HỒ THỜI GIAN THỰC (REAL-TIME CLOCK)
+                  </span>
+                  <span className="text-sm font-bold text-[#1B3B48]">
+                    {currentClock.toLocaleTimeString("vi-VN")} —{" "}
+                    {currentClock.toLocaleDateString("vi-VN", {
+                      weekday: "long",
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setSelectedWeekOffset((w) => w - 1)}
+                  className="px-3 py-1.5 rounded-lg border border-[#D5CFC4] text-xs font-semibold hover:bg-[#EFECE6]"
+                >
+                  ◀ Tuần trước
+                </button>
+                <button
+                  onClick={() => setSelectedWeekOffset(0)}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold ${
+                    selectedWeekOffset === 0
+                      ? "bg-[#1B3B48] text-white"
+                      : "bg-[#EFECE6] text-[#1B3B48] hover:bg-[#E5E0D8]"
+                  }`}
+                >
+                  Hôm nay (Tuần hiện tại)
+                </button>
+                <button
+                  onClick={() => setSelectedWeekOffset((w) => w + 1)}
+                  className="px-3 py-1.5 rounded-lg border border-[#D5CFC4] text-xs font-semibold hover:bg-[#EFECE6]"
+                >
+                  Tuần sau ▶
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-stone-600">Lọc lớp:</span>
+                <select
+                  value={calendarFilterClass}
+                  onChange={(e) => setCalendarFilterClass(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-[#D5CFC4] text-xs bg-[#F7F6F2] font-semibold text-[#1B3B48]"
+                >
+                  <option value="ALL">Tất cả các lớp ({classesList.length})</option>
+                  {classesList.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.id} - {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Quản lý khung giờ tùy chỉnh */}
+            {showSlotManager && userRole === "teacher" && (
+              <div className="bg-[#EFECE6] rounded-2xl p-5 border border-[#D5CFC4]">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-serif font-bold text-[#1B3B48] text-sm">
+                    ⚙ Quản lý Khung giờ Ca học (Giáo viên tự thêm/xóa ca học)
+                  </h4>
                   <button
                     onClick={() => setShowSlotManager(false)}
-                    className="text-xs font-bold text-[#5C7667]"
+                    className="text-xs text-stone-500 hover:text-stone-800"
                   >
-                    ✕ Đóng
+                    Đóng ✕
                   </button>
                 </div>
-
-                <form
-                  onSubmit={handleAddCustomTimeSlot}
-                  className="grid grid-cols-1 sm:grid-cols-4 gap-3"
-                >
+                <form onSubmit={handleAddTimeSlot} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
                   <input
                     type="text"
+                    required
+                    placeholder="Tên ca (VD: Ca Tối 2: 19h45 - 21h15)"
                     value={newSlotForm.label}
-                    onChange={(e) =>
-                      setNewSlotForm({ ...newSlotForm, label: e.target.value })
-                    }
-                    placeholder="Tên ca (VD: Ca Luyện đề ĐH)"
-                    className="p-2.5 rounded-xl border text-xs"
+                    onChange={(e) => setNewSlotForm({ ...newSlotForm, label: e.target.value })}
+                    className="px-3 py-2 rounded-lg border border-[#D5CFC4] text-xs bg-white"
                   />
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold">Từ:</span>
-                    <input
-                      type="time"
-                      required
-                      value={newSlotForm.startTime}
-                      onChange={(e) =>
-                        setNewSlotForm({
-                          ...newSlotForm,
-                          startTime: e.target.value,
-                        })
-                      }
-                      className="flex-1 p-2.5 rounded-xl border text-xs font-mono"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold">Đến:</span>
-                    <input
-                      type="time"
-                      required
-                      value={newSlotForm.endTime}
-                      onChange={(e) =>
-                        setNewSlotForm({
-                          ...newSlotForm,
-                          endTime: e.target.value,
-                        })
-                      }
-                      className="flex-1 p-2.5 rounded-xl border text-xs font-mono"
-                    />
-                  </div>
+                  <input
+                    type="time"
+                    required
+                    value={newSlotForm.startTime}
+                    onChange={(e) => setNewSlotForm({ ...newSlotForm, startTime: e.target.value })}
+                    className="px-3 py-2 rounded-lg border border-[#D5CFC4] text-xs bg-white"
+                  />
+                  <input
+                    type="time"
+                    required
+                    value={newSlotForm.endTime}
+                    onChange={(e) => setNewSlotForm({ ...newSlotForm, endTime: e.target.value })}
+                    className="px-3 py-2 rounded-lg border border-[#D5CFC4] text-xs bg-white"
+                  />
                   <button
                     type="submit"
-                    className="bg-[#1B3B48] text-white px-4 py-2.5 rounded-xl text-xs font-bold"
+                    className="px-4 py-2 rounded-lg bg-[#1B3B48] text-white text-xs font-bold hover:bg-[#2C4A3E]"
                   >
-                    + Thêm Hàng Khung Giờ Mới
+                    + Thêm Khung Giờ
                   </button>
                 </form>
-
-                <div className="flex flex-wrap gap-2 pt-2">
-                  {activeTimeSlots.map((s) => (
+                <div className="flex flex-wrap gap-2">
+                  {timeSlots.map((sl) => (
                     <div
-                      key={s.id}
-                      className="px-3 py-1.5 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] flex items-center gap-2 text-xs font-bold"
+                      key={sl.id}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-[#D5CFC4] text-xs"
                     >
-                      <span>{s.label}</span>
+                      <span className="font-semibold text-[#1B3B48]">{sl.label}</span>
+                      <span className="text-stone-400 font-mono">
+                        ({sl.startTime}-{sl.endTime})
+                      </span>
                       <button
-                        onClick={() => handleDeleteTimeSlot(s.id)}
-                        className="text-red-600 hover:underline ml-1"
+                        onClick={() => handleDeleteTimeSlot(sl.id)}
+                        className="text-red-500 hover:text-red-700 font-bold ml-1"
                       >
-                        ✕
+                        ×
                       </button>
                     </div>
                   ))}
@@ -5278,1323 +6075,810 @@ Email: ${TEACHER_INFO.email}`;
               </div>
             )}
 
-            {/* FORM XẾP LỊCH HỌC LINH HOẠT + ĐÍNH KÈM TÀI LIỆU HỌC HÔM ĐÓ */}
-            <form
-              onSubmit={handleAddCalendarEvent}
-              className="bg-white p-6 rounded-2xl border-2 border-[#1B3B48] space-y-4 shadow-sm"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
-                <h3 className="font-bold text-base text-[#1B3B48]">
-                  {currentUser.role === "teacher"
-                    ? "➕ Tạo Ca Học & Đính kèm Tài liệu Buổi Học Hôm Đó (Giáo viên)"
-                    : `➕ Thêm Lịch Tự Học Cá Nhân (${currentUser.name})`}
-                </h3>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCalForm({ ...calForm, repeatMode: "WEEK_ONLY" })
-                    }
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                      calForm.repeatMode === "WEEK_ONLY"
-                        ? "bg-[#1B3B48] text-white"
-                        : "bg-[#EFECE6] text-[#1B3B48]"
-                    }`}
-                  >
-                    📌 Chỉ áp dụng cho Tuần đang xem ({activeWeekInfo.days[0].shortDate} - {activeWeekInfo.days[6].shortDate})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCalForm({ ...calForm, repeatMode: "RECURRING" })
-                    }
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                      calForm.repeatMode === "RECURRING"
-                        ? "bg-[#2C4A3E] text-white"
-                        : "bg-[#EFECE6] text-[#1B3B48]"
-                    }`}
-                  >
-                    🔁 Lặp lại cố định hàng tuần
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold mb-1 text-[#5C7667]">
-                    1. Thứ & Ngày thực tế:
-                  </label>
+            {/* FORM TẠO LỊCH HỌC MỚI + TÍCH HỢP ĐIỂM DANH TRỰC TIẾP NGAY LÚC TẠO LỊCH */}
+            <div className="bg-[#EFECE6] rounded-2xl p-6 border border-[#D5CFC4]">
+              <h3 className="font-serif font-bold text-[#1B3B48] mb-3 text-lg">
+                {userRole === "teacher"
+                  ? "➕ Tạo Ca học Mới & Điểm danh Học sinh Trực tiếp lúc Tạo lịch"
+                  : "➕ Thêm Lịch Ôn tập Cá nhân (Chỉ mình em thấy)"}
+              </h3>
+              <form onSubmit={handleAddCalendarEvent} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
                   <select
-                    value={calForm.dayOfWeek}
-                    onChange={(e) =>
-                      setCalForm({ ...calForm, dayOfWeek: e.target.value })
-                    }
-                    className="w-full p-2.5 rounded-xl border border-[#E2DFD7] text-xs bg-white font-bold"
-                  >
-                    {activeWeekInfo.days.map((d) => (
-                      <option key={d.dayOfWeek} value={d.dayOfWeek}>
-                        {d.dayOfWeek} ({d.fullDate}){d.isToday ? " • HÔM NAY" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold mb-1 text-[#5C7667]">
-                    2. Giờ bắt đầu:
-                  </label>
-                  <input
-                    type="time"
-                    required
-                    value={calForm.startTime}
-                    onChange={(e) =>
-                      setCalForm({ ...calForm, startTime: e.target.value })
-                    }
-                    className="w-full p-2.5 rounded-xl border border-[#E2DFD7] text-xs font-mono font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold mb-1 text-[#5C7667]">
-                    3. Giờ kết thúc:
-                  </label>
-                  <input
-                    type="time"
-                    required
-                    value={calForm.endTime}
-                    onChange={(e) =>
-                      setCalForm({ ...calForm, endTime: e.target.value })
-                    }
-                    className="w-full p-2.5 rounded-xl border border-[#E2DFD7] text-xs font-mono font-bold"
-                  />
-                </div>
-
-                <div className="lg:col-span-2">
-                  <label className="block text-[11px] font-bold mb-1 text-[#5C7667]">
-                    4. Vị trí Hàng Khung Giờ trên Bảng lịch:
-                  </label>
-                  <select
-                    value={
-                      calForm.slotMode === "AUTO_NEW"
-                        ? "__AUTO_NEW__"
-                        : calForm.slotId
-                    }
+                    value={calForm.day}
                     onChange={(e) => {
-                      if (e.target.value === "__AUTO_NEW__") {
-                        setCalForm({ ...calForm, slotMode: "AUTO_NEW" });
-                      } else {
-                        const foundSlot = activeTimeSlots.find(
-                          (s) => s.id === e.target.value
-                        );
-                        setCalForm({
-                          ...calForm,
-                          slotMode: "EXISTING",
-                          slotId: e.target.value,
-                          startTime: foundSlot?.startTime || calForm.startTime,
-                          endTime: foundSlot?.endTime || calForm.endTime,
-                        });
-                      }
-                    }}
-                    className="w-full p-2.5 rounded-xl border border-[#E2DFD7] text-xs bg-white font-semibold"
-                  >
-                    <option value="__AUTO_NEW__">
-                      ✨ Tự tạo Hàng Khung Giờ riêng ({calForm.startTime} -{" "}
-                      {calForm.endTime})
-                    </option>
-                    {activeTimeSlots.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        Đặt vào hàng: {s.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {currentUser.role === "teacher" && (
-                  <div>
-                    <label className="block text-[11px] font-bold mb-1 text-[#5C7667]">
-                      5. Phân lớp:
-                    </label>
-                    <select
-                      value={calForm.targetScope}
-                      onChange={(e) =>
-                        setCalForm({ ...calForm, targetScope: e.target.value })
-                      }
-                      className="w-full p-2.5 rounded-xl border border-[#E2DFD7] text-xs bg-white font-bold"
-                    >
-                      <option value="ALL">Tất cả các lớp</option>
-                      {appData.classes.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          Lớp {c.id}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-                {calForm.slotMode === "AUTO_NEW" && (
-                  <div className="sm:col-span-3">
-                    <input
-                      type="text"
-                      value={calForm.newSlotLabel}
-                      onChange={(e) =>
-                        setCalForm({
-                          ...calForm,
-                          newSlotLabel: e.target.value,
-                        })
-                      }
-                      placeholder="Tên hàng ca mới (VD: Ca Tối Muộn)"
-                      className="w-full p-2.5 rounded-xl border border-[#2C4A3E] text-xs bg-[#F7F6F2] font-bold"
-                    />
-                  </div>
-                )}
-                <div
-                  className={
-                    calForm.slotMode === "AUTO_NEW"
-                      ? "sm:col-span-5"
-                      : "sm:col-span-6"
-                  }
-                >
-                  <input
-                    type="text"
-                    required
-                    value={calForm.title}
-                    onChange={(e) =>
-                      setCalForm({ ...calForm, title: e.target.value })
-                    }
-                    placeholder="Nội dung buổi học (VD: Chuyên đề Ester - Lipid buổi 2)"
-                    className="w-full p-2.5 rounded-xl border border-[#E2DFD7] text-xs"
-                  />
-                </div>
-                <div
-                  className={
-                    calForm.slotMode === "AUTO_NEW"
-                      ? "sm:col-span-4"
-                      : "sm:col-span-6"
-                  }
-                >
-                  <input
-                    type="text"
-                    value={calForm.roomOrNote}
-                    onChange={(e) =>
-                      setCalForm({ ...calForm, roomOrNote: e.target.value })
-                    }
-                    placeholder="Link Google Meet / Zoom hoặc Ghi chú phòng học..."
-                    className="w-full p-2.5 rounded-xl border border-[#E2DFD7] text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* KHU VỰC ĐÍNH KÈM TÀI LIỆU BUỔI HỌC HÔM ĐÓ TRONG FORM LỊCH HỌC */}
-              <div className="p-3.5 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] space-y-2">
-                <div className="text-xs font-bold text-[#1B3B48]">
-                  📎 Đính kèm Tài liệu học hôm đó vào Ca học này:
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 items-center">
-                  <select
-                    value={calForm.attachedDocId}
-                    onChange={(e) => {
-                      const docId = e.target.value;
-                      const found = (appData.documents || []).find(
-                        (d) => d.id === docId
-                      );
+                      const newDay = e.target.value;
+                      const foundDay = weekDatesList.find((d) => d.dayName === newDay);
                       setCalForm({
                         ...calForm,
-                        attachedDocId: docId,
-                        lessonDocTitle: found
-                          ? found.title
-                          : calForm.lessonDocTitle,
-                        lessonDocUrl: found
-                          ? found.externalUrl
-                          : calForm.lessonDocUrl,
+                        day: newDay,
+                        dateISO: foundDay ? foundDay.dateISO : calForm.dateISO,
                       });
                     }}
-                    className="p-2 rounded-lg border text-xs bg-white font-semibold"
+                    className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white text-xs font-semibold"
                   >
-                    <option value="">-- Chọn từ Kho tài liệu đã tải --</option>
-                    {(appData.documents || []).map((d) => (
-                      <option key={d.id} value={d.id}>
-                        [{d.classId}] {d.title} ({d.chapterTitle})
+                    {DAYS_OF_WEEK.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
                       </option>
                     ))}
                   </select>
 
                   <input
-                    type="text"
-                    value={calForm.lessonDocTitle}
-                    onChange={(e) =>
-                      setCalForm({ ...calForm, lessonDocTitle: e.target.value })
-                    }
-                    placeholder="Hoặc nhập tên tài liệu hôm đó..."
-                    className="p-2 rounded-lg border text-xs bg-white"
+                    type="date"
+                    value={calForm.dateISO}
+                    onChange={(e) => setCalForm({ ...calForm, dateISO: e.target.value })}
+                    className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white text-xs font-mono"
                   />
 
-                  <input
-                    type="text"
-                    value={calForm.lessonDocUrl}
-                    onChange={(e) =>
-                      setCalForm({ ...calForm, lessonDocUrl: e.target.value })
-                    }
-                    placeholder="Link tài liệu (Google Drive/PDF)..."
-                    className="p-2 rounded-lg border text-xs bg-white"
-                  />
+                  <select
+                    value={calForm.slotId}
+                    onChange={(e) => {
+                      const sl = timeSlots.find((s) => s.id === e.target.value);
+                      setCalForm({
+                        ...calForm,
+                        slotId: e.target.value,
+                        startTime: sl ? sl.startTime : calForm.startTime,
+                        endTime: sl ? sl.endTime : calForm.endTime,
+                      });
+                    }}
+                    className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white text-xs font-semibold md:col-span-2"
+                  >
+                    {timeSlots.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label} ({s.startTime} - {s.endTime})
+                      </option>
+                    ))}
+                  </select>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 md:col-span-2">
                     <input
-                      type="file"
-                      onChange={(e) =>
-                        handleFlexibleFileUpload(e, (res) =>
-                          setCalForm((prev) => ({
-                            ...prev,
-                            lessonDocTitle: prev.lessonDocTitle || res.fileName,
-                            lessonDocFileName: res.fileName,
-                            lessonDocDataUrl: res.dataUrl,
-                          }))
-                        )
-                      }
-                      className="text-[11px] w-full"
+                      type="time"
+                      value={calForm.startTime}
+                      onChange={(e) => setCalForm({ ...calForm, startTime: e.target.value })}
+                      className="w-full px-2.5 py-2 rounded-lg border border-[#D5CFC4] bg-white text-xs font-mono"
+                      title="Giờ bắt đầu"
+                    />
+                    <span className="text-xs text-stone-500">→</span>
+                    <input
+                      type="time"
+                      value={calForm.endTime}
+                      onChange={(e) => setCalForm({ ...calForm, endTime: e.target.value })}
+                      className="w-full px-2.5 py-2 rounded-lg border border-[#D5CFC4] bg-white text-xs font-mono"
+                      title="Giờ kết thúc"
                     />
                   </div>
                 </div>
-              </div>
 
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  className="bg-[#1B3B48] hover:bg-[#2C4A3E] text-white py-2.5 px-5 rounded-xl text-xs font-bold transition"
-                >
-                  + Lưu Ca Học & Tài Liệu Đính Kèm Vào Bảng Lịch
-                </button>
-              </div>
-            </form>
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                  {userRole === "teacher" && (
+                    <>
+                      <select
+                        value={calForm.grade}
+                        onChange={(e) => setCalForm({ ...calForm, grade: Number(e.target.value) })}
+                        className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white text-xs font-bold text-[#1B3B48]"
+                      >
+                        <option value={10}>Khối 10</option>
+                        <option value={11}>Khối 11</option>
+                        <option value={12}>Khối 12</option>
+                      </select>
 
-            {/* Bộ lọc lớp trên Bảng Lịch */}
-            <div className="flex flex-wrap items-center justify-between gap-2 bg-white p-4 rounded-2xl border border-[#E2DFD7]">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-[#5C7667]">
-                  Lọc theo lớp:
-                </span>
-                <button
-                  onClick={() => setCalendarFilterClass("ALL")}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold ${
-                    calendarFilterClass === "ALL"
-                      ? "bg-[#1B3B48] text-white"
-                      : "bg-[#EFECE6] text-[#1B3B48]"
-                  }`}
-                >
-                  Tất cả các lớp
-                </button>
-                {appData.classes.map((c) => (
+                      <select
+                        value={calForm.classId}
+                        onChange={(e) => {
+                          const cid = e.target.value;
+                          const foundCls = classesList.find((c) => c.id === cid);
+                          setCalForm({
+                            ...calForm,
+                            classId: cid,
+                            grade: foundCls ? foundCls.grade : calForm.grade,
+                          });
+                          if (calFormIncludeAttendance) {
+                            initCalFormAttendanceForClass(cid);
+                          }
+                        }}
+                        className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white text-xs font-bold text-[#9C6644]"
+                      >
+                        <option value="ALL">Tất cả lớp thuộc Khối</option>
+                        {classesList.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            Lớp {c.id} ({c.name})
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )}
+
+                  <input
+                    type="text"
+                    required
+                    placeholder="Nội dung ca học (VD: Chuyên đề Ester - Lipid / Giải đề thi thử)"
+                    value={calForm.title}
+                    onChange={(e) => setCalForm({ ...calForm, title: e.target.value })}
+                    className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white text-xs md:col-span-2"
+                  />
+
+                  {userRole === "teacher" && (
+                    <input
+                      type="url"
+                      placeholder="Link Google Meet / Zoom (nếu có)..."
+                      value={calForm.meetLink}
+                      onChange={(e) => setCalForm({ ...calForm, meetLink: e.target.value })}
+                      className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white text-xs"
+                    />
+                  )}
+
                   <button
-                    key={c.id}
-                    onClick={() => setCalendarFilterClass(c.id)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold ${
-                      calendarFilterClass === c.id
-                        ? "bg-[#1B3B48] text-white"
-                        : "bg-[#EFECE6] text-[#1B3B48]"
-                    }`}
+                    type="submit"
+                    className="bg-[#1B3B48] text-white rounded-lg px-4 py-2 text-xs font-bold hover:bg-[#2C4A3E] transition-colors shadow-sm"
                   >
-                    Lớp {c.id}
+                    {calFormIncludeAttendance && userRole === "teacher"
+                      ? "✓ Lưu Lịch & Lưu Điểm Danh"
+                      : "+ Lưu vào Lịch Tuần"}
                   </button>
-                ))}
-              </div>
-              <span className="text-xs text-[#5C7667]">
-                💡 Mẹo: Bấm nút <strong>"✎ Sửa"</strong> trên bất kỳ thẻ lịch nào để đổi giờ hoặc đính kèm/cập nhật tài liệu học hôm đó.
-              </span>
+                </div>
+
+                {/* TÙY CHỌN: BẬT ĐIỂM DANH HỌC SINH NGAY TRONG LÚC TẠO LỊCH (KHI LỚP ĐANG DIỄN RA) */}
+                {userRole === "teacher" && (
+                  <div className="pt-2 border-t border-[#D5CFC4]">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={calFormIncludeAttendance}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setCalFormIncludeAttendance(checked);
+                            if (checked) {
+                              const targetCid =
+                                calForm.classId && calForm.classId !== "ALL"
+                                  ? calForm.classId
+                                  : classesList.find((c) => c.grade === Number(calForm.grade))?.id ||
+                                    classesList[0]?.id ||
+                                    "";
+                              if (targetCid) {
+                                if (calForm.classId === "ALL") {
+                                  setCalForm((prev) => ({ ...prev, classId: targetCid }));
+                                }
+                                initCalFormAttendanceForClass(targetCid);
+                              }
+                            }
+                          }}
+                          className="w-4 h-4 accent-[#1B3B48] rounded"
+                        />
+                        <span className="text-xs font-bold text-[#1B3B48]">
+                          🟢 Điểm danh Học sinh ngay lúc tạo lịch này (Dành cho lớp đang diễn ra)
+                        </span>
+                      </label>
+                      {calFormIncludeAttendance && (
+                        <span className="text-[11px] text-[#2C4A3E] font-medium">
+                          Khi bấm lưu lịch, hệ thống sẽ tự động lưu phiếu điểm danh và cập nhật tỷ lệ chuyên cần của từng HS.
+                        </span>
+                      )}
+                    </div>
+
+                    {calFormIncludeAttendance && (
+                      <div className="mt-3 bg-white rounded-xl p-4 border border-[#D5CFC4]">
+                        {(!calForm.classId || calForm.classId === "ALL") ? (
+                          <p className="text-xs text-amber-700 font-medium">
+                            ⚠ Vui lòng chọn một lớp cụ thể ở ô "Lớp" phía trên để hiển thị danh sách học sinh cần điểm danh.
+                          </p>
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                              <span className="text-xs font-bold text-[#1B3B48]">
+                                Danh sách điểm danh Lớp {calForm.classId} ({calFormAttendanceRecords.length} học sinh)
+                              </span>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setCalFormAttendanceRecords((prev) =>
+                                      prev.map((r) => ({ ...r, status: "present" }))
+                                    )
+                                  }
+                                  className="px-2.5 py-1 rounded bg-emerald-100 text-emerald-800 text-[11px] font-bold hover:bg-emerald-200"
+                                >
+                                  ✓ Tất cả Có mặt
+                                </button>
+                              </div>
+                            </div>
+                            {calFormAttendanceRecords.length === 0 ? (
+                              <p className="text-xs text-stone-500 italic">
+                                Lớp {calForm.classId} hiện chưa có học sinh nào.
+                              </p>
+                            ) : (
+                              <div className="max-h-60 overflow-y-auto divide-y divide-stone-100 border border-stone-200 rounded-lg">
+                                {calFormAttendanceRecords.map((rec, idx) => (
+                                  <div
+                                    key={rec.studentId}
+                                    className="p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white hover:bg-stone-50"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[11px] font-mono text-stone-400 w-5">
+                                        {idx + 1}.
+                                      </span>
+                                      <span className="text-xs font-bold text-[#1B3B48]">
+                                        {rec.studentName}
+                                      </span>
+                                      <span className="text-[10px] font-mono text-stone-400">
+                                        ({rec.studentId})
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      {(
+                                        [
+                                          ["present", "✓ Có mặt", "bg-emerald-600 text-white"],
+                                          ["late", "⏰ Đi muộn", "bg-amber-500 text-white"],
+                                          ["excused", "📩 Có phép", "bg-sky-600 text-white"],
+                                          ["unexcused", "✕ Không phép", "bg-red-600 text-white"],
+                                        ] as const
+                                      ).map(([stKey, stLabel, activeCls]) => (
+                                        <button
+                                          key={stKey}
+                                          type="button"
+                                          onClick={() => {
+                                            const next = [...calFormAttendanceRecords];
+                                            next[idx] = { ...next[idx], status: stKey };
+                                            setCalFormAttendanceRecords(next);
+                                          }}
+                                          className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${
+                                            rec.status === stKey
+                                              ? activeCls
+                                              : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                                          }`}
+                                        >
+                                          {stLabel}
+                                        </button>
+                                      ))}
+                                      <input
+                                        type="text"
+                                        placeholder="Ghi chú..."
+                                        value={rec.note}
+                                        onChange={(e) => {
+                                          const next = [...calFormAttendanceRecords];
+                                          next[idx] = { ...next[idx], note: e.target.value };
+                                          setCalFormAttendanceRecords(next);
+                                        }}
+                                        className="px-2 py-1 rounded border border-stone-200 text-[11px] w-28"
+                                      />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </form>
             </div>
 
-            {/* BẢNG LƯỚI CALENDAR 7 CỘT */}
-            <div className="bg-white rounded-2xl border border-[#E2DFD7] shadow-sm overflow-x-auto">
-              <table className="w-full min-w-[980px] border-collapse text-xs">
-                <thead>
-                  <tr className="bg-[#1B3B48] text-white">
-                    <th className="p-3 border border-[#2C4A3E] w-44 text-left">
-                      Ca / Khung giờ linh hoạt
-                    </th>
-                    {activeWeekInfo.days.map((dayObj) => (
-                      <th
-                        key={dayObj.dayOfWeek}
-                        className={`p-3 border border-[#2C4A3E] text-center transition ${
-                          dayObj.isToday
-                            ? "bg-[#2C4A3E] text-[#E9C46A] ring-2 ring-inset ring-[#E9C46A]"
-                            : ""
-                        }`}
-                      >
-                        <div className="font-bold text-xs">
-                          {dayObj.dayOfWeek}
-                        </div>
-                        <div className="text-[11px] font-mono opacity-90 mt-0.5">
-                          {dayObj.fullDate}
-                        </div>
-                        {dayObj.isToday && (
-                          <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-[#E9C46A] text-[#1B3B48] text-[10px] font-black uppercase">
-                            Hôm nay
-                          </span>
-                        )}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeTimeSlots.map((slot) => (
-                    <tr key={slot.id} className="align-top">
-                      <td className="p-3 border border-[#E2DFD7] bg-[#EFECE6] font-bold text-[#1B3B48]">
-                        <div className="flex items-start justify-between gap-1">
-                          <span>{slot.label}</span>
-                        </div>
-                      </td>
-
-                      {activeWeekInfo.days.map((dayObj) => {
-                        const cellEvents = appData.calendarEvents
-                          .filter((ev) => {
-                            if (!matchesSelectedYear(ev.academicYear))
-                              return false;
+            {/* BẢNG THỜI KHÓA BIỂU 7 NGÀY TRONG TUẦN */}
+            <div className="bg-white rounded-2xl border border-[#E5E0D8] overflow-hidden shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[950px]">
+                  <thead>
+                    <tr className="bg-[#1B3B48] text-[#F7F6F2] text-xs font-mono uppercase">
+                      <th className="p-3.5 border-r border-[#2C4A3E] w-44">Khung giờ / Ca học</th>
+                      {weekDatesList.map((wd) => (
+                        <th
+                          key={wd.dayName}
+                          className={`p-3 border-r border-[#2C4A3E] text-center ${
+                            wd.isToday ? "bg-[#2C4A3E] text-[#E9C46A]" : ""
+                          }`}
+                        >
+                          <div className="font-bold">{wd.dayName}</div>
+                          <div className="text-[11px] opacity-80 font-mono mt-0.5">
+                            {wd.shortLabel} {wd.isToday ? "• HÔM NAY" : ""}
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E5E0D8] text-xs">
+                    {timeSlots.map((slot) => (
+                      <tr key={slot.id} className="hover:bg-[#F7F6F2]/50">
+                        <td className="p-3.5 font-mono font-semibold text-[#1B3B48] bg-[#EFECE6]/50 border-r border-[#E5E0D8] align-top">
+                          <div className="font-bold text-xs">{slot.label}</div>
+                          <div className="text-[11px] text-[#9C6644] mt-1">
+                            ⏰ {slot.startTime} - {slot.endTime}
+                          </div>
+                        </td>
+                        {weekDatesList.map((wd) => {
+                          const cellEvents = calendarEvents.filter((ev) => {
+                            if (ev.slotId !== slot.id || ev.day !== wd.dayName) return false;
+                            if (ev.dateISO && ev.dateISO !== wd.dateISO) return false;
                             if (
-                              ev.dayOfWeek !== dayObj.dayOfWeek ||
-                              ev.slotId !== slot.id
-                            )
+                              userRole === "student" &&
+                              ev.type === "personal" &&
+                              ev.ownerId !== currentStudentId
+                            ) {
                               return false;
-
-                            const isRecurring =
-                              !ev.repeatMode || ev.repeatMode === "RECURRING";
-                            if (isRecurring) {
-                              if (
-                                (ev.excludedWeeks || []).includes(
-                                  activeWeekInfo.weekKey
-                                )
-                              ) {
-                                return false;
-                              }
-                            } else {
-                              if (ev.weekKey !== activeWeekInfo.weekKey) {
-                                return false;
-                              }
                             }
-
-                            if (currentUser.role === "student") {
-                              const isMyClass =
-                                ev.targetScope === "ALL" ||
-                                ev.targetScope === currentUser.classId;
-                              const isMyPersonal =
-                                ev.targetScope ===
-                                `HS:${currentUser.studentId}`;
-                              if (!isMyClass && !isMyPersonal) return false;
-                            }
-
                             if (
                               calendarFilterClass !== "ALL" &&
-                              ev.targetScope !== calendarFilterClass &&
-                              ev.targetScope !== "ALL"
+                              ev.classId &&
+                              ev.classId !== "ALL" &&
+                              ev.classId !== calendarFilterClass
                             ) {
                               return false;
                             }
                             return true;
-                          })
-                          .sort((a, b) =>
-                            (a.startTime || "").localeCompare(b.startTime || "")
-                          );
-
-                        return (
-                          <td
-                            key={dayObj.dayOfWeek}
-                            className={`p-2 border border-[#E2DFD7] min-h-[115px] w-36 transition ${
-                              dayObj.isToday
-                                ? "bg-[#E9C46A]/10"
-                                : "bg-[#F7F6F2]/40 hover:bg-white"
-                            }`}
-                          >
-                            <div className="space-y-2">
-                              {cellEvents.map((ev) => {
-                                const isPersonal =
-                                  ev.targetScope?.startsWith("HS:");
-                                const liveStatus = getLiveSessionStatus(
-                                  dayObj.dateKey,
-                                  ev.startTime,
-                                  ev.endTime,
-                                  realTimeNow
-                                );
-                                const linkedDoc = (
-                                  appData.documents || []
-                                ).find((d) => d.id === ev.attachedDocId);
-                                const docTitle =
-                                  ev.lessonDocTitle || linkedDoc?.title || "";
-                                const docUrl =
-                                  ev.lessonDocUrl ||
-                                  linkedDoc?.externalUrl ||
-                                  "";
-                                const docDataUrl =
-                                  ev.lessonDocDataUrl ||
-                                  linkedDoc?.fileDataUrl ||
-                                  "";
-                                const docFileName =
-                                  ev.lessonDocFileName ||
-                                  linkedDoc?.fileName ||
-                                  "tailieu";
-
-                                return (
-                                  <div
-                                    key={ev.id}
-                                    className={`p-2.5 rounded-xl text-white space-y-1.5 shadow-sm ${
-                                      isPersonal
-                                        ? "bg-[#5C7667]"
-                                        : "bg-[#1B3B48]"
-                                    }`}
-                                  >
-                                    <div className="flex items-center justify-between gap-1">
-                                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/20">
-                                        {ev.ownerName}
-                                      </span>
-                                      {(currentUser.role === "teacher" ||
-                                        isPersonal) && (
-                                        <div className="flex items-center gap-1">
-                                          <button
-                                            onClick={() =>
-                                              setEditingCalEvent({
-                                                ...ev,
-                                                startTime:
-                                                  ev.startTime || "18:00",
-                                                endTime: ev.endTime || "19:30",
-                                                repeatMode:
-                                                  ev.repeatMode || "RECURRING",
-                                                editScope:
-                                                  ev.repeatMode === "RECURRING"
-                                                    ? "THIS_WEEK_ONLY"
-                                                    : "ALL",
-                                              })
-                                            }
-                                            className="text-[10px] bg-white/15 hover:bg-white/30 px-1.5 py-0.5 rounded text-[#E9C46A] font-bold"
-                                            title="Sửa giờ / Đổi ngày / Đính kèm tài liệu"
-                                          >
-                                            ✎ Sửa
-                                          </button>
-                                          <button
-                                            onClick={() =>
-                                              saveToAll({
-                                                ...appData,
-                                                calendarEvents:
-                                                  appData.calendarEvents.filter(
-                                                    (x) => x.id !== ev.id
-                                                  ),
-                                              })
-                                            }
-                                            className="text-[10px] text-red-200 hover:text-white px-1"
-                                            title="Xóa ca học này"
-                                          >
-                                            ✕
-                                          </button>
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    <div className="flex flex-wrap items-center gap-1">
-                                      {liveStatus && (
-                                        <span
-                                          className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${liveStatus.color}`}
-                                        >
-                                          {liveStatus.label}
+                          });
+                          return (
+                            <td
+                              key={wd.dayName}
+                              className={`p-2 border-r border-[#E5E0D8] align-top h-32 ${
+                                wd.isToday ? "bg-amber-50/20" : ""
+                              }`}
+                            >
+                              <div className="space-y-2">
+                                {cellEvents.map((ev) => {
+                                  const liveStatus = getEventRealtimeStatus(ev, currentClock);
+                                  const isLive = liveStatus?.code === "LIVE";
+                                  return (
+                                    <div
+                                      key={ev.id}
+                                      className={`p-2.5 rounded-xl border transition-all relative group ${
+                                        isLive
+                                          ? "bg-emerald-50 border-emerald-500 ring-2 ring-emerald-400/50 shadow-sm"
+                                          : ev.type === "personal"
+                                          ? "bg-amber-50/80 border-amber-300 text-amber-900"
+                                          : ev.grade === 12
+                                          ? "bg-[#1B3B48]/10 border-[#1B3B48]/30 text-[#1B3B48]"
+                                          : ev.grade === 11
+                                          ? "bg-[#2C4A3E]/10 border-[#2C4A3E]/30 text-[#2C4A3E]"
+                                          : "bg-[#9C6644]/10 border-[#9C6644]/30 text-[#9C6644]"
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between gap-1 mb-1">
+                                        <span className="font-mono text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-white/80">
+                                          {ev.type === "personal"
+                                            ? "Cá nhân"
+                                            : ev.classId && ev.classId !== "ALL"
+                                            ? ev.classId
+                                            : `Khối ${ev.grade}`}
                                         </span>
-                                      )}
-                                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-black/25 text-gray-200">
-                                        {ev.repeatMode === "WEEK_ONLY"
-                                          ? `📌 Tuần ${dayObj.shortDate}`
-                                          : "🔁 Hàng tuần"}
-                                      </span>
-                                    </div>
-
-                                    <div className="font-bold text-xs leading-snug">
-                                      {ev.title}
-                                    </div>
-
-                                    {ev.customTime && (
-                                      <div className="text-[11px] text-[#E9C46A] font-bold">
-                                        🕒 {ev.customTime}
-                                      </div>
-                                    )}
-
-                                    {ev.roomOrNote && (
-                                      <div className="text-[10px] opacity-95 break-words">
-                                        📍{" "}
-                                        {ev.roomOrNote.startsWith("http") ? (
-                                          <a
-                                            href={ev.roomOrNote}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="underline text-[#E9C46A] font-semibold"
-                                          >
-                                            Vào link lớp học
-                                          </a>
-                                        ) : (
-                                          ev.roomOrNote
+                                        {(userRole === "teacher" ||
+                                          (ev.type === "personal" &&
+                                            ev.ownerId === currentStudentId)) && (
+                                          <div className="flex items-center gap-1">
+                                            {userRole === "teacher" && ev.type === "class" && (
+                                              <button
+                                                onClick={() => setEditingCalEvent({ ...ev })}
+                                                className="text-[10px] px-1.5 py-0.5 rounded bg-white/90 text-[#1B3B48] hover:bg-[#1B3B48] hover:text-white font-semibold"
+                                                title="Chỉnh sửa ca học"
+                                              >
+                                                Sửa
+                                              </button>
+                                            )}
+                                            <button
+                                              onClick={() => handleDeleteEvent(ev.id)}
+                                              className="text-red-500 hover:text-red-700 font-bold px-1"
+                                              title="Xóa lịch"
+                                            >
+                                              ×
+                                            </button>
+                                          </div>
                                         )}
                                       </div>
-                                    )}
 
-                                    {/* HIỂN THỊ TÀI LIỆU HỌC HÔM ĐÓ NGAY TRÊN THẺ LỊCH HỌC */}
-                                    {docTitle && (
-                                      <div className="p-1.5 rounded-lg bg-white/15 border border-white/20 space-y-1 mt-1">
-                                        <div className="text-[10px] font-bold text-[#E9C46A] leading-tight">
-                                          📎 TL: {docTitle}
-                                        </div>
-                                        <div className="flex flex-wrap gap-1">
-                                          {docUrl && (
-                                            <a
-                                              href={docUrl}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="px-1.5 py-0.5 rounded bg-[#E9C46A] text-[#1B3B48] text-[9px] font-extrabold"
-                                            >
-                                              Mở TL
-                                            </a>
-                                          )}
-                                          {docDataUrl && (
-                                            <a
-                                              href={docDataUrl}
-                                              download={docFileName}
-                                              className="px-1.5 py-0.5 rounded bg-emerald-300 text-[#1B3B48] text-[9px] font-extrabold"
-                                            >
-                                              Tải File
-                                            </a>
-                                          )}
-                                        </div>
+                                      <div className="font-bold leading-snug text-xs mb-1">
+                                        {ev.title}
                                       </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+                                      <div className="text-[10px] font-mono text-stone-500 mb-1">
+                                        ⏰ {ev.startTime || slot.startTime} -{" "}
+                                        {ev.endTime || slot.endTime}
+                                      </div>
+
+                                      {liveStatus && (
+                                        <div
+                                          className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mb-1.5 ${liveStatus.badgeClass}`}
+                                        >
+                                          {liveStatus.label}
+                                        </div>
+                                      )}
+
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        {ev.meetLink && (
+                                          <a
+                                            href={ev.meetLink}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded bg-[#2C4A3E] text-white hover:bg-[#1B3B48]"
+                                          >
+                                            🎥 Phòng học
+                                          </a>
+                                        )}
+                                        {/* NÚT ĐIỂM DANH HỌC SINH TRỰC TIẾP TRÊN CA HỌC */}
+                                        {userRole === "teacher" && ev.type === "class" && (
+                                          <button
+                                            type="button"
+                                            onClick={() => openAttendanceFromCalendarEvent(ev)}
+                                            className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded transition-colors ${
+                                              isLive
+                                                ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow"
+                                                : "bg-[#E9C46A]/40 text-[#1B3B48] hover:bg-[#E9C46A]"
+                                            }`}
+                                          >
+                                            {isLive ? "🟢 Điểm danh HS (Đang học)" : "✓ Điểm danh HS"}
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            {/* MODAL SỬA NHANH GIỜ HỌC / ĐỔI NGÀY / ĐÍNH KÈM TÀI LIỆU BUỔI HỌC */}
-            {editingCalEvent && (
-              <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                <form
-                  onSubmit={handleSaveEditedCalEvent}
-                  className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-[#E2DFD7] max-h-[90vh] overflow-y-auto"
-                >
-                  <div className="flex items-center justify-between border-b pb-3">
-                    <h3 className="font-bold text-base text-[#1B3B48]">
-                      ✎ Điều chỉnh Lịch & Tài liệu học hôm đó ({editingCalEvent.ownerName})
+            {/* MODAL CHỈNH SỬA CA HỌC (KÈM NÚT MỞ ĐIỂM DANH TRỰC TIẾP) */}
+            {editingCalEvent && userRole === "teacher" && (
+              <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-[#F7F6F2] border border-[#D5CFC4] rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-[#E5E0D8] pb-3 mb-4">
+                    <h3 className="font-serif font-bold text-lg text-[#1B3B48]">
+                      ✎ Chỉnh sửa Ca học & Điểm danh
                     </h3>
                     <button
-                      type="button"
                       onClick={() => setEditingCalEvent(null)}
-                      className="text-xs font-bold text-[#5C7667]"
+                      className="text-stone-400 hover:text-stone-700 font-bold"
                     >
-                      ✕ Đóng
+                      ✕
                     </button>
                   </div>
-
-                  {editingCalEvent.repeatMode === "RECURRING" && (
-                    <div className="p-3 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] space-y-2 text-xs">
-                      <div className="font-bold text-[#1B3B48]">
-                        Bạn muốn áp dụng thay đổi (giờ học / tài liệu hôm đó) như thế nào?
+                  <form onSubmit={handleSaveEditedCalEvent} className="space-y-3 text-xs">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-semibold text-stone-600 mb-1">Thứ</label>
+                        <select
+                          value={editingCalEvent.day}
+                          onChange={(e) =>
+                            setEditingCalEvent({ ...editingCalEvent, day: e.target.value })
+                          }
+                          className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                        >
+                          {DAYS_OF_WEEK.map((d) => (
+                            <option key={d} value={d}>
+                              {d}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                      <label className="flex items-center gap-2 cursor-pointer">
+                      <div>
+                        <label className="block font-semibold text-stone-600 mb-1">Ngày học</label>
                         <input
-                          type="radio"
-                          checked={
-                            editingCalEvent.editScope === "THIS_WEEK_ONLY"
+                          type="date"
+                          value={editingCalEvent.dateISO || ""}
+                          onChange={(e) =>
+                            setEditingCalEvent({ ...editingCalEvent, dateISO: e.target.value })
                           }
-                          onChange={() =>
+                          className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-semibold text-stone-600 mb-1">
+                          Giờ bắt đầu
+                        </label>
+                        <input
+                          type="time"
+                          value={editingCalEvent.startTime || "18:00"}
+                          onChange={(e) =>
+                            setEditingCalEvent({ ...editingCalEvent, startTime: e.target.value })
+                          }
+                          className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-stone-600 mb-1">
+                          Giờ kết thúc
+                        </label>
+                        <input
+                          type="time"
+                          value={editingCalEvent.endTime || "19:30"}
+                          onChange={(e) =>
+                            setEditingCalEvent({ ...editingCalEvent, endTime: e.target.value })
+                          }
+                          className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-semibold text-stone-600 mb-1">Khối</label>
+                        <select
+                          value={editingCalEvent.grade}
+                          onChange={(e) =>
                             setEditingCalEvent({
                               ...editingCalEvent,
-                              editScope: "THIS_WEEK_ONLY",
+                              grade: Number(e.target.value),
                             })
                           }
-                        />
-                        <span>
-                          <strong>Chỉ áp dụng riêng cho Tuần đang xem</strong> (
-                          {activeWeekInfo.weekLabel})
-                        </span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          checked={editingCalEvent.editScope === "ALL"}
-                          onChange={() =>
-                            setEditingCalEvent({
-                              ...editingCalEvent,
-                              editScope: "ALL",
-                            })
+                          className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                        >
+                          <option value={10}>Khối 10</option>
+                          <option value={11}>Khối 11</option>
+                          <option value={12}>Khối 12</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-stone-600 mb-1">Mã Lớp</label>
+                        <select
+                          value={editingCalEvent.classId || "ALL"}
+                          onChange={(e) =>
+                            setEditingCalEvent({ ...editingCalEvent, classId: e.target.value })
                           }
-                        />
-                        <span>
-                          <strong>Áp dụng cố định cho tất cả các tuần</strong>
-                        </span>
-                      </label>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="block font-bold mb-1">
-                        Chuyển sang Thứ:
-                      </label>
-                      <select
-                        value={editingCalEvent.dayOfWeek}
-                        onChange={(e) =>
-                          setEditingCalEvent({
-                            ...editingCalEvent,
-                            dayOfWeek: e.target.value,
-                          })
-                        }
-                        className="w-full p-2.5 rounded-xl border bg-white font-bold"
-                      >
-                        {activeWeekInfo.days.map((d) => (
-                          <option key={d.dayOfWeek} value={d.dayOfWeek}>
-                            {d.dayOfWeek} ({d.shortDate})
-                          </option>
-                        ))}
-                      </select>
+                          className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                        >
+                          <option value="ALL">Tất cả lớp trong Khối</option>
+                          {classesList.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.id} - {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
 
                     <div>
-                      <label className="block font-bold mb-1">
-                        Hàng Khung giờ:
-                      </label>
-                      <select
-                        value={editingCalEvent.slotId}
-                        onChange={(e) =>
-                          setEditingCalEvent({
-                            ...editingCalEvent,
-                            slotId: e.target.value,
-                          })
-                        }
-                        className="w-full p-2.5 rounded-xl border bg-white font-bold"
-                      >
-                        {activeTimeSlots.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block font-bold mb-1">
-                        Giờ bắt đầu mới:
+                      <label className="block font-semibold text-stone-600 mb-1">
+                        Tiêu đề / Nội dung buổi học
                       </label>
                       <input
-                        type="time"
-                        value={editingCalEvent.startTime}
+                        type="text"
+                        required
+                        value={editingCalEvent.title}
                         onChange={(e) =>
-                          setEditingCalEvent({
-                            ...editingCalEvent,
-                            startTime: e.target.value,
-                          })
+                          setEditingCalEvent({ ...editingCalEvent, title: e.target.value })
                         }
-                        className="w-full p-2.5 rounded-xl border font-mono font-bold"
+                        className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
                       />
                     </div>
 
                     <div>
-                      <label className="block font-bold mb-1">
-                        Giờ kết thúc mới:
+                      <label className="block font-semibold text-stone-600 mb-1">
+                        Link phòng học (Google Meet / Zoom)
                       </label>
                       <input
-                        type="time"
-                        value={editingCalEvent.endTime}
+                        type="url"
+                        value={editingCalEvent.meetLink || ""}
                         onChange={(e) =>
-                          setEditingCalEvent({
-                            ...editingCalEvent,
-                            endTime: e.target.value,
-                          })
+                          setEditingCalEvent({ ...editingCalEvent, meetLink: e.target.value })
                         }
-                        className="w-full p-2.5 rounded-xl border font-mono font-bold"
+                        className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
                       />
                     </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-xs font-bold mb-1">
-                      Tên buổi học:
-                    </label>
-                    <input
-                      type="text"
-                      value={editingCalEvent.title}
-                      onChange={(e) =>
-                        setEditingCalEvent({
-                          ...editingCalEvent,
-                          title: e.target.value,
-                        })
-                      }
-                      className="w-full p-2.5 rounded-xl border text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold mb-1">
-                      Link phòng học / Ghi chú:
-                    </label>
-                    <input
-                      type="text"
-                      value={editingCalEvent.roomOrNote}
-                      onChange={(e) =>
-                        setEditingCalEvent({
-                          ...editingCalEvent,
-                          roomOrNote: e.target.value,
-                        })
-                      }
-                      className="w-full p-2.5 rounded-xl border text-xs"
-                    />
-                  </div>
-
-                  {/* ĐÍNH KÈM TÀI LIỆU HỌC HÔM ĐÓ TRONG MODAL SỬA LỊCH */}
-                  <div className="p-3 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] space-y-2 text-xs">
-                    <div className="font-bold text-[#1B3B48]">
-                      📎 Tài liệu học đính kèm cho buổi học này:
+                    <div className="pt-3 border-t border-[#E5E0D8] flex flex-wrap items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const ev = editingCalEvent;
+                          setEditingCalEvent(null);
+                          openAttendanceFromCalendarEvent(ev);
+                        }}
+                        className="px-3.5 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700"
+                      >
+                        ✓ Điểm danh HS ca học này
+                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingCalEvent(null)}
+                          className="px-4 py-2 rounded-lg border border-[#D5CFC4] text-stone-600 font-semibold"
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-4 py-2 rounded-lg bg-[#1B3B48] text-white font-bold hover:bg-[#2C4A3E]"
+                        >
+                          Lưu thay đổi
+                        </button>
+                      </div>
                     </div>
-                    <select
-                      value={editingCalEvent.attachedDocId || ""}
-                      onChange={(e) => {
-                        const docId = e.target.value;
-                        const found = (appData.documents || []).find(
-                          (d) => d.id === docId
-                        );
-                        setEditingCalEvent({
-                          ...editingCalEvent,
-                          attachedDocId: docId,
-                          lessonDocTitle: found
-                            ? found.title
-                            : editingCalEvent.lessonDocTitle,
-                          lessonDocUrl: found
-                            ? found.externalUrl
-                            : editingCalEvent.lessonDocUrl,
-                        });
-                      }}
-                      className="w-full p-2 rounded-lg border bg-white font-semibold"
-                    >
-                      <option value="">
-                        -- Chọn từ Kho tài liệu Lớp/Chương --
-                      </option>
-                      {(appData.documents || []).map((d) => (
-                        <option key={d.id} value={d.id}>
-                          [{d.classId}] {d.title} ({d.chapterTitle})
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      value={editingCalEvent.lessonDocTitle || ""}
-                      onChange={(e) =>
-                        setEditingCalEvent({
-                          ...editingCalEvent,
-                          lessonDocTitle: e.target.value,
-                        })
-                      }
-                      placeholder="Tên tài liệu buổi học hôm đó..."
-                      className="w-full p-2 rounded-lg border bg-white"
-                    />
-                    <input
-                      type="text"
-                      value={editingCalEvent.lessonDocUrl || ""}
-                      onChange={(e) =>
-                        setEditingCalEvent({
-                          ...editingCalEvent,
-                          lessonDocUrl: e.target.value,
-                        })
-                      }
-                      placeholder="Link tải tài liệu (Google Drive / OneDrive)..."
-                      className="w-full p-2 rounded-lg border bg-white"
-                    />
-                    <input
-                      type="file"
-                      onChange={(e) =>
-                        handleFlexibleFileUpload(e, (res) =>
-                          setEditingCalEvent((prev) => ({
-                            ...prev,
-                            lessonDocTitle:
-                              prev.lessonDocTitle || res.fileName,
-                            lessonDocFileName: res.fileName,
-                            lessonDocDataUrl: res.dataUrl,
-                          }))
-                        )
-                      }
-                      className="text-[11px]"
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditingCalEvent(null)}
-                      className="px-4 py-2 rounded-xl bg-gray-100 text-xs font-bold"
-                    >
-                      Hủy
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2 rounded-xl bg-[#1B3B48] text-white text-xs font-bold"
-                    >
-                      Lưu Thay Đổi Lịch & Tài Liệu
-                    </button>
-                  </div>
-                </form>
+                  </form>
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* ===================================================================
-            MỤC 03: LỘ TRÌNH CHƯƠNG TRÌNH, YCCĐ & TẢI TÀI LIỆU CHO TỪNG LỚP TỪNG CHƯƠNG
-        =================================================================== */}
+        {/* ============================================================ */}
+        {/* MỤC 03: CHƯƠNG TRÌNH HỌC (HÓA 10, 11, 12 - CHUẨN IUPAC)      */}
+        {/* ============================================================ */}
         {activeView === "curriculum" && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-[#E2DFD7] flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E5E0D8] pb-4">
               <div>
-                <span className="text-xs font-bold uppercase text-[#5C7667]">
-                  Mục 03 • Chương trình GDPT 2018 & Tài liệu Từng Chương
+                <span className="text-xs font-mono uppercase tracking-widest text-[#9C6644] block mb-1">
+                  MỤC 03 // CURRICULUM & YCCĐ (GDPT 2018 - DANH PHÁP IUPAC)
                 </span>
-                <h2 className="text-2xl font-bold text-[#1B3B48]">
-                  Lộ trình Hóa học 10 • 11 • 12 & Tải Tài liệu Cho Từng Lớp, Từng Chương
+                <h2 className="text-2xl font-serif font-bold text-[#1B3B48]">
+                  Khung Chương trình Hóa học 10 • 11 • 12 & Học liệu từng Chương
                 </h2>
-                <p className="text-xs text-[#5C7667] mt-1">
-                  Mỗi chương đã tạo trong lộ trình đều có khu vực tải tài liệu riêng cho từng lớp. Khi Giáo viên tải tài liệu lên, mục Tin tức <strong>📘 Học thuật</strong> sẽ tự động cập nhật.
-                </p>
               </div>
-              <button
-                onClick={goBack}
-                className="px-4 py-2 rounded-xl bg-[#EFECE6] text-[#1B3B48] text-xs font-bold hover:bg-[#E2DFD7]"
-              >
-                ← Quay lại trang trước
-              </button>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
-              <div className="flex flex-1 gap-3">
-                {["10", "11", "12"].map((grade) => (
+              <div className="flex items-center gap-2">
+                {[10, 11, 12].map((g) => (
                   <button
-                    key={grade}
-                    onClick={() => {
-                      setSelectedGradeTab(grade);
-                      setCurriculumClassFilter("ALL");
-                    }}
-                    className={`flex-1 py-3 px-4 rounded-2xl font-bold text-sm border transition ${
-                      selectedGradeTab === grade
-                        ? "bg-[#1B3B48] text-white border-[#1B3B48]"
-                        : "bg-white text-[#1B3B48] border-[#E2DFD7] hover:bg-[#EFECE6]"
+                    key={g}
+                    onClick={() => setSelectedGradeTab(g as 10 | 11 | 12)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                      selectedGradeTab === g
+                        ? "bg-[#1B3B48] text-white shadow-sm"
+                        : "bg-[#EFECE6] text-[#1B3B48] hover:bg-[#E5E0D8]"
                     }`}
                   >
-                    Hóa học Lớp {grade} (
-                    {(appData.curriculum?.[grade] || []).length} Chương)
+                    Hóa học {g}
                   </button>
                 ))}
-              </div>
-
-              {/* Bộ lọc Lớp trong Khối để xem/tải tài liệu của từng lớp */}
-              <div className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-2xl border border-[#E2DFD7]">
-                <span className="text-xs font-bold text-[#5C7667]">
-                  Lọc tài liệu theo Lớp (Khối {selectedGradeTab}):
-                </span>
-                <select
-                  value={curriculumClassFilter}
-                  onChange={(e) => setCurriculumClassFilter(e.target.value)}
-                  className="text-xs font-extrabold text-[#1B3B48] bg-[#F7F6F2] px-2.5 py-1.5 rounded-lg border border-[#E2DFD7]"
+                <button
+                  onClick={() => setActiveView("home")}
+                  className="text-sm text-[#5C7667] hover:text-[#1B3B48] font-medium px-3 py-2"
                 >
-                  <option value="ALL">
-                    Tất cả các lớp Khối {selectedGradeTab}
-                  </option>
-                  {appData.classes
-                    .filter((c) => c.grade === selectedGradeTab)
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        Lớp {c.id} ({c.name})
-                      </option>
-                    ))}
-                </select>
+                  ← Trang chủ
+                </button>
               </div>
             </div>
 
-            {currentUser.role === "teacher" && (
-              <form
-                onSubmit={handleAddNewChapter}
-                className="bg-white p-6 rounded-2xl border-2 border-[#1B3B48] space-y-4"
-              >
-                <h3 className="font-bold text-base text-[#1B3B48]">
-                  + Thêm Chương / Chuyên đề mới vào Lộ trình Lớp {selectedGradeTab}
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                  <input
-                    type="text"
-                    required
-                    value={newChapterForm.title}
-                    onChange={(e) =>
-                      setNewChapterForm({
-                        ...newChapterForm,
-                        grade: selectedGradeTab,
-                        title: e.target.value,
-                      })
-                    }
-                    placeholder="Tên chương..."
-                    className="sm:col-span-2 p-2.5 rounded-xl border border-[#E2DFD7] text-sm"
-                  />
-                  <input
-                    type="text"
-                    value={newChapterForm.timeline}
-                    onChange={(e) =>
-                      setNewChapterForm({
-                        ...newChapterForm,
-                        grade: selectedGradeTab,
-                        timeline: e.target.value,
-                      })
-                    }
-                    placeholder="Tháng học (VD: Tháng 05)"
-                    className="p-2.5 rounded-xl border border-[#E2DFD7] text-sm"
-                  />
-                  <input
-                    type="text"
-                    value={newChapterForm.targetDate}
-                    onChange={(e) =>
-                      setNewChapterForm({
-                        ...newChapterForm,
-                        grade: selectedGradeTab,
-                        targetDate: e.target.value,
-                      })
-                    }
-                    placeholder="Học tới ngày nào (VD: Tới 25/05/2026)"
-                    className="p-2.5 rounded-xl border border-[#E2DFD7] text-sm"
-                  />
-                </div>
-                <input
-                  type="text"
-                  value={newChapterForm.formulas}
-                  onChange={(e) =>
-                    setNewChapterForm({
-                      ...newChapterForm,
-                      grade: selectedGradeTab,
-                      formulas: e.target.value,
-                    })
-                  }
-                  placeholder="Các công thức hóa học trọng tâm..."
-                  className="w-full p-2.5 rounded-xl border border-[#E2DFD7] text-sm"
-                />
-                <textarea
-                  rows={3}
-                  value={newChapterForm.requirementsText}
-                  onChange={(e) =>
-                    setNewChapterForm({
-                      ...newChapterForm,
-                      grade: selectedGradeTab,
-                      requirementsText: e.target.value,
-                    })
-                  }
-                  placeholder="Nhập Yêu cầu cần đạt (mỗi dòng 1 ý)..."
-                  className="w-full p-2.5 rounded-xl border border-[#E2DFD7] text-sm"
-                />
+            {userRole === "teacher" && (
+              <div className="flex justify-end">
                 <button
-                  type="submit"
-                  className="bg-[#1B3B48] text-white px-5 py-2 rounded-xl text-xs font-bold"
+                  onClick={() =>
+                    setNewChapterForm({
+                      grade: selectedGradeTab,
+                      code: `C${curriculumData[selectedGradeTab].length + 1}-${selectedGradeTab}`,
+                      title: "",
+                       lessons: "",
+                      yccdText: "",
+                    })
+                  }
+                  className="px-4 py-2 rounded-xl bg-[#2C4A3E] text-white text-xs font-bold hover:bg-[#1B3B48]"
                 >
-                  Lưu Chương mới vào Lộ trình
+                  + Thêm Chương mới cho Khối {selectedGradeTab}
                 </button>
-              </form>
+              </div>
             )}
 
-            <div className="space-y-5">
-              {(appData.curriculum?.[selectedGradeTab] || []).map((chap) => {
-                const chapterDocs = (appData.documents || []).filter((d) => {
-                  if (!matchesSelectedYear(d.academicYear)) return false;
-                  const matchChap =
-                    d.chapterId === chap.id || d.chapterTitle === chap.title;
-                  if (!matchChap) return false;
-                  if (
-                    curriculumClassFilter !== "ALL" &&
-                    d.classId !== "ALL" &&
-                    d.classId !== curriculumClassFilter
-                  ) {
-                    return false;
-                  }
-                  if (currentUser.role === "student") {
-                    return (
-                      d.classId === "ALL" || d.classId === currentUser.classId
-                    );
-                  }
-                  return true;
-                });
-
-                const gradeClasses = appData.classes.filter(
-                  (c) => c.grade === selectedGradeTab
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {curriculumData[selectedGradeTab].map((chap) => {
+                const chapDocs = documents.filter(
+                  (d) => d.grade === selectedGradeTab && d.chapter === chap.title
                 );
-
                 return (
                   <div
-                    key={chap.id}
-                    className="bg-white p-6 rounded-2xl border border-[#E2DFD7] shadow-sm space-y-4"
+                    key={chap.code}
+                    className="bg-white rounded-2xl p-6 border border-[#E5E0D8] shadow-sm flex flex-col justify-between"
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EFECE6] pb-3">
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs font-bold uppercase px-2.5 py-0.5 rounded bg-[#1B3B48] text-white">
-                            {chap.timeline}
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-xs font-mono font-bold px-2.5 py-1 rounded bg-[#1B3B48]/10 text-[#1B3B48]">
+                          {chap.code}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono text-[#9C6644] font-semibold">
+                            {chap.lessons}
                           </span>
-                          <span className="text-xs font-bold px-2.5 py-0.5 rounded bg-[#EFECE6] text-[#2C4A3E]">
-                            ⏳ Mốc thời gian: {chap.targetDate || "Theo kế hoạch"}
-                          </span>
+                          {userRole === "teacher" && (
+                            <>
+                              <button
+                                onClick={() =>
+                                  setEditingChapter({
+                                    grade: selectedGradeTab,
+                                    code: chap.code,
+                                    title: chap.title,
+                                    lessons: chap.lessons,
+                                    yccdText: chap.yccd.join("\\n"),
+                                  })
+                                }
+                                className="text-xs px-2 py-0.5 rounded bg-[#EFECE6] text-[#1B3B48] hover:bg-[#1B3B48] hover:text-white font-semibold"
+                              >
+                                ✎ Sửa
+                              </button>
+                              <button
+                                onClick={() =>
+                                  handleDeleteCurriculumChapter(selectedGradeTab, chap.code)
+                                }
+                                className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-semibold"
+                              >
+                                Xóa
+                              </button>
+                            </>
+                          )}
                         </div>
-                        <h3 className="font-extrabold text-lg text-[#1B3B48] pt-1">
-                          {chap.title}
-                        </h3>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-semibold text-[#5C7667] bg-[#F7F6F2] px-3 py-1 rounded-lg border border-[#E2DFD7]">
-                          Trọng tâm: {chap.formulas}
+                      <h3 className="text-lg font-serif font-bold text-[#1B3B48] mb-3">
+                        {chap.title}
+                      </h3>
+
+                      <div className="bg-[#F7F6F2] rounded-xl p-3.5 border border-[#E5E0D8] mb-4">
+                        <span className="text-[11px] font-mono uppercase tracking-wider text-[#2C4A3E] font-bold block mb-1.5">
+                          🎯 Yêu cầu cần đạt (YCCĐ):
                         </span>
-                        {currentUser.role === "teacher" && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveChapterUploadId(
-                                  activeChapterUploadId === chap.id
-                                    ? null
-                                    : chap.id
-                                );
-                                setChapterDocForm({
-                                  title: "",
-                                  classId:
-                                    gradeClasses[0]?.id || "ALL",
-                                  externalUrl: "",
-                                  note: "",
-                                  fileName: "",
-                                  fileType: "",
-                                  fileDataUrl: "",
-                                });
-                              }}
-                              className="bg-[#1B3B48] text-[#E9C46A] px-3 py-1 rounded-lg text-xs font-bold"
-                            >
-                              + Tải tài liệu cho Chương này
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setEditingChapter({
-                                  ...chap,
-                                  grade: selectedGradeTab,
-                                  requirementsText: (
-                                    chap.requirements || []
-                                  ).join("\n"),
-                                })
-                              }
-                              className="bg-[#5C7667] text-white px-3 py-1 rounded-lg text-xs font-bold"
-                            >
-                              Sửa Chương
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextList = (
-                                  appData.curriculum[selectedGradeTab] || []
-                                ).filter((x) => x.id !== chap.id);
-                                saveToAll({
-                                  ...appData,
-                                  curriculum: {
-                                    ...appData.curriculum,
-                                    [selectedGradeTab]: nextList,
-                                  },
-                                });
-                              }}
-                              className="text-red-600 text-xs font-bold px-2"
-                            >
-                              Xóa
-                            </button>
-                          </>
+                        <ul className="space-y-1 text-xs text-stone-700 list-disc list-inside">
+                          {chap.yccd.map((item, i) => (
+                            <li key={i} className="leading-relaxed">
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-[#E5E0D8] pt-3 mt-2">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-[#1B3B48]">
+                          📂 Tài liệu Chương này ({chapDocs.length})
+                        </span>
+                        {userRole === "teacher" && (
+                          <button
+                            onClick={() =>
+                              setChapterDocForm({
+                                grade: selectedGradeTab,
+                                chapterTitle: chap.title,
+                                title: "",
+                                type: "PDF Chuyên đề",
+                                size: "2.0 MB",
+                                url: "",
+                                fileName: "",
+                                fileDataUrl: "",
+                              })
+                            }
+                            className="text-[11px] font-bold text-[#9C6644] hover:underline"
+                          >
+                            + Tải tài liệu vào chương
+                          </button>
                         )}
                       </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <div className="text-xs font-bold uppercase tracking-wider text-[#1B3B48]">
-                        Yêu cầu cần đạt:
-                      </div>
-                      <ul className="space-y-1.5 text-sm text-[#1B3B48]/90 list-disc pl-5">
-                        {(chap.requirements || []).map((req, i) => (
-                          <li key={i} className="leading-relaxed">
-                            {req}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    {/* FORM TẢI TÀI LIỆU LÊN TRỰC TIẾP TRONG CHƯƠNG ĐÓ (CHỌN LỚP ÁP DỤNG) */}
-                    {currentUser.role === "teacher" &&
-                      activeChapterUploadId === chap.id && (
-                        <form
-                          onSubmit={(e) => handleUploadChapterDocument(e, chap)}
-                          className="p-4 rounded-2xl bg-[#EFECE6] border-2 border-[#1B3B48] space-y-3"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-extrabold text-[#1B3B48]">
-                              📤 Tải Tài liệu mới lên "{chap.title}" (Tự động cập nhật vào Tin tức Học thuật)
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setActiveChapterUploadId(null)}
-                              className="text-xs font-bold text-[#5C7667]"
-                            >
-                              ✕ Đóng
-                            </button>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                            <input
-                              type="text"
-                              required
-                              value={chapterDocForm.title}
-                              onChange={(e) =>
-                                setChapterDocForm({
-                                  ...chapterDocForm,
-                                  title: e.target.value,
-                                })
-                              }
-                              placeholder="Tên tài liệu (VD: Chuyên đề bài tập Cấu tạo nguyên tử)"
-                              className="p-2.5 rounded-xl border text-xs bg-white"
-                            />
-
-                            <select
-                              value={chapterDocForm.classId}
-                              onChange={(e) =>
-                                setChapterDocForm({
-                                  ...chapterDocForm,
-                                  classId: e.target.value,
-                                })
-                              }
-                              className="p-2.5 rounded-xl border text-xs bg-white font-bold"
-                            >
-                              <option value="ALL">
-                                Áp dụng: Toàn bộ các lớp Khối {selectedGradeTab}
-                              </option>
-                              {gradeClasses.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                  Dành riêng cho Lớp {c.id} ({c.name})
-                                </option>
-                              ))}
-                            </select>
-
-                            <input
-                              type="text"
-                              value={chapterDocForm.externalUrl}
-                              onChange={(e) =>
-                                setChapterDocForm({
-                                  ...chapterDocForm,
-                                  externalUrl: e.target.value,
-                                })
-                              }
-                              placeholder="Link tải Google Drive / OneDrive (nếu có)..."
-                              className="p-2.5 rounded-xl border text-xs bg-white"
-                            />
-                          </div>
-
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold">
-                                Chọn File từ máy:
-                              </span>
-                              <input
-                                type="file"
-                                onChange={(e) =>
-                                  handleFlexibleFileUpload(e, (res) =>
-                                    setChapterDocForm((prev) => ({
-                                      ...prev,
-                                      title: prev.title || res.fileName,
-                                      fileName: res.fileName,
-                                      fileType: res.fileType,
-                                      fileDataUrl: res.dataUrl,
-                                    }))
-                                  )
-                                }
-                                className="text-xs"
-                              />
-                            </div>
-                            <button
-                              type="submit"
-                              className="bg-[#1B3B48] text-white px-4 py-2 rounded-xl text-xs font-bold"
-                            >
-                              Lưu Tài liệu & Đăng Tin Học thuật
-                            </button>
-                          </div>
-                        </form>
-                      )}
-
-                    {/* DANH SÁCH TÀI LIỆU ĐÃ TẢI LÊN CỦA CHƯƠNG NÀY THEO TỪNG LỚP */}
-                    <div className="pt-3 border-t border-[#EFECE6] space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold text-[#2C4A3E]">
-                          📚 Tài liệu học tập của {chap.title} ({chapterDocs.length} tài liệu)
-                        </span>
-                      </div>
-
-                      {chapterDocs.length === 0 ? (
-                        <p className="text-xs text-[#5C7667] italic">
-                          Chưa có tài liệu nào được tải lên cho chương này.
+                      {chapDocs.length === 0 ? (
+                        <p className="text-xs text-stone-400 italic">
+                          Chưa có tài liệu đính kèm riêng cho chương này.
                         </p>
                       ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                          {chapterDocs.map((doc) => (
+                        <div className="space-y-1.5">
+                          {chapDocs.map((d) => (
                             <div
-                              key={doc.id}
-                              className="p-3 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] flex items-center justify-between gap-2"
+                              key={d.id}
+                              className="flex items-center justify-between p-2 rounded-lg bg-[#EFECE6]/60 text-xs"
                             >
-                              <div className="space-y-0.5 min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="px-2 py-0.5 rounded bg-[#1B3B48] text-white text-[10px] font-bold">
-                                    {doc.classId === "ALL"
-                                      ? `Khối ${doc.grade}`
-                                      : `Lớp ${doc.classId}`}
-                                  </span>
-                                  <span className="text-[10px] text-[#5C7667]">
-                                    {doc.createdAt}
-                                  </span>
-                                </div>
-                                <div className="font-bold text-xs text-[#1B3B48] truncate">
-                                  📄 {doc.title}
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {doc.externalUrl && (
+                              <span className="font-medium text-[#1B3B48] truncate max-w-[220px]">
+                                📄 {d.title}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                {d.url && d.url !== "#" && (
                                   <a
-                                    href={doc.externalUrl}
+                                    href={d.url}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="px-2.5 py-1 rounded-lg bg-[#1B3B48] text-white text-xs font-bold"
+                                    className="px-2 py-0.5 rounded bg-[#1B3B48] text-white text-[10px] font-semibold"
                                   >
-                                    🔗 Mở Link
+                                    Mở
                                   </a>
                                 )}
-                                {doc.fileDataUrl && (
+                                {d.fileDataUrl && (
                                   <a
-                                    href={doc.fileDataUrl}
-                                    download={doc.fileName || "tailieu"}
-                                    className="px-2.5 py-1 rounded-lg bg-[#5C7667] text-white text-xs font-bold"
+                                    href={d.fileDataUrl}
+                                    download={d.fileName || d.title}
+                                    className="px-2 py-0.5 rounded bg-[#2C4A3E] text-white text-[10px] font-semibold"
                                   >
-                                    ⬇ Tải về
+                                    Tải
                                   </a>
-                                )}
-                                {currentUser.role === "teacher" && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      saveToAll({
-                                        ...appData,
-                                        documents: (
-                                          appData.documents || []
-                                        ).filter((x) => x.id !== doc.id),
-                                      })
-                                    }
-                                    className="text-red-600 text-xs font-bold px-1"
-                                  >
-                                    ✕
-                                  </button>
                                 )}
                               </div>
                             </div>
@@ -6606,713 +6890,472 @@ Email: ${TEACHER_INFO.email}`;
                 );
               })}
             </div>
+          </div>
+        )}
 
-            {editingChapter && (
-              <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                <form
-                  onSubmit={handleSaveChapterEdit}
-                  className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-xl border border-[#E2DFD7]"
+        {/* ============================================================ */}
+        {/* MỤC 04: THEO DÕI TIẾN ĐỘ HỌC TẬP & HỒ SƠ HỌC SINH            */}
+        {/* ============================================================ */}
+        {activeView === "progress" && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E5E0D8] pb-4">
+              <div>
+                <span className="text-xs font-mono uppercase tracking-widest text-[#9C6644] block mb-1">
+                  MỤC 04 // STUDENT ACADEMIC PROGRESS & REPORT
+                </span>
+                <h2 className="text-2xl font-serif font-bold text-[#1B3B48]">
+                  Hồ sơ Năng lực, Điểm số & Nhận xét Học sinh
+                </h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {userRole === "teacher" && (
+                  <select
+                    value={selectedStudent.id}
+                    onChange={(e) => setSelectedStudentId(e.target.value)}
+                    className="px-3.5 py-2 rounded-xl border border-[#D5CFC4] bg-white text-xs font-bold text-[#1B3B48]"
+                  >
+                    {students.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        [{s.classId}] {s.name} ({s.id}) — ĐTB: {s.score}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {userRole === "teacher" && selectedStudent && (
+                  <button
+                    onClick={() => setEditingStudentModal({ ...selectedStudent, originalId: selectedStudent.id })}
+                    className="px-3.5 py-2 rounded-xl bg-[#E9C46A] text-[#1B3B48] text-xs font-bold hover:bg-[#f0d182] shadow-sm"
+                  >
+                    ✎ Sửa thông tin HS này
+                  </button>
+                )}
+                <button
+                  onClick={() => setActiveView("home")}
+                  className="text-sm text-[#5C7667] hover:text-[#1B3B48] font-medium px-3 py-2"
                 >
-                  <div className="flex items-center justify-between border-b pb-3">
-                    <h3 className="font-bold text-lg text-[#1B3B48]">
-                      Cập nhật Chương, Thời gian học & Yêu cầu cần đạt
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => setEditingChapter(null)}
-                      className="text-xs font-bold text-[#5C7667]"
-                    >
-                      ✕ Đóng
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  ← Trang chủ
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Thẻ chỉ số học tập của Học sinh đang chọn */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white rounded-2xl p-5 border border-[#E5E0D8] shadow-sm">
+                <span className="text-[11px] font-mono uppercase text-stone-400 block">
+                  HỌC SINH & LỚP HỌC
+                </span>
+                <h3 className="text-lg font-serif font-bold text-[#1B3B48] mt-1">
+                  {selectedStudent.name}
+                </h3>
+                <p className="text-xs text-[#9C6644] font-semibold mt-1">
+                  Mã HS: {selectedStudent.id} • Lớp: {selectedStudent.classId} (Khối{" "}
+                  {selectedStudent.grade})
+                </p>
+                <p className="text-[11px] text-stone-500 mt-1">
+                  🎯 Mục tiêu: {selectedStudent.universityGoal} ({selectedStudent.targetScore}+)
+                </p>
+              </div>
+
+              <div className="bg-white rounded-2xl p-5 border border-[#E5E0D8] shadow-sm">
+                <span className="text-[11px] font-mono uppercase text-stone-400 block">
+                  ĐIỂM TRUNG BÌNH HÓA HỌC
+                </span>
+                <div className="text-3xl font-serif font-bold text-[#1B3B48] mt-1">
+                  {selectedStudent.score.toFixed(1)}{" "}
+                  <span className="text-sm font-normal text-stone-400">/ 10</span>
+                </div>
+                <p className="text-xs text-emerald-700 font-medium mt-1">
+                  Tự động đồng bộ từ Điểm KT trên lớp & Bài tập
+                </p>
+              </div>
+
+              <div className="bg-white rounded-2xl p-5 border border-[#E5E0D8] shadow-sm">
+                <span className="text-[11px] font-mono uppercase text-stone-400 block">
+                  TỶ LỆ CHUYÊN CẦN
+                </span>
+                <div className="text-3xl font-serif font-bold text-[#2C4A3E] mt-1">
+                  {selectedStudent.attendanceRate}%
+                </div>
+                <p className="text-xs text-stone-600 mt-1 line-clamp-1">
+                  {selectedStudent.attendanceNote}
+                </p>
+              </div>
+
+              <div className="bg-white rounded-2xl p-5 border border-[#E5E0D8] shadow-sm">
+                <span className="text-[11px] font-mono uppercase text-stone-400 block">
+                  ĐIỂM TÍCH CỰC (GÓC HÓA HỌC)
+                </span>
+                <div className="text-3xl font-serif font-bold text-[#9C6644] mt-1">
+                  {selectedStudent.engagementPoints || 0}{" "}
+                  <span className="text-xs font-normal text-stone-500">pts</span>
+                </div>
+                <p className="text-xs text-stone-500 mt-1">
+                  Chuỗi học tập: 🔥 {selectedStudent.streakDays || 1} ngày liên tiếp
+                </p>
+              </div>
+            </div>
+
+            {/* Bảng lịch sử bài kiểm tra & nhận xét của Giáo viên */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-[#E5E0D8] shadow-sm">
+                <h3 className="font-serif font-bold text-lg text-[#1B3B48] mb-4">
+                  📊 Lịch sử Điểm Bài Kiểm tra & Bài Tập ({selectedStudent.inClassTests.length})
+                </h3>
+
+                {userRole === "teacher" && (
+                  <form
+                    onSubmit={handleAddInClassTest}
+                    className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 bg-[#EFECE6] p-3.5 rounded-xl mb-4 text-xs"
+                  >
                     <input
                       type="text"
                       required
-                      value={editingChapter.title}
-                      onChange={(e) =>
-                        setEditingChapter({
-                          ...editingChapter,
-                          title: e.target.value,
-                        })
-                      }
-                      className="w-full p-2.5 rounded-xl border text-sm"
+                      placeholder="Tên bài KT / Bài tập..."
+                      value={testForm.testName}
+                      onChange={(e) => setTestForm({ ...testForm, testName: e.target.value })}
+                      className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white sm:col-span-2"
+                    />
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="10"
+                      required
+                      placeholder="Điểm (0-10)"
+                      value={testForm.score}
+                      onChange={(e) => setTestForm({ ...testForm, score: e.target.value })}
+                      className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
                     />
                     <input
                       type="text"
-                      value={editingChapter.timeline}
-                      onChange={(e) =>
-                        setEditingChapter({
-                          ...editingChapter,
-                          timeline: e.target.value,
-                        })
-                      }
-                      className="w-full p-2.5 rounded-xl border text-sm"
+                      placeholder="Nhận xét ngắn..."
+                      value={testForm.note}
+                      onChange={(e) => setTestForm({ ...testForm, note: e.target.value })}
+                      className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
                     />
-                    <input
-                      type="text"
-                      value={editingChapter.targetDate}
-                      onChange={(e) =>
-                        setEditingChapter({
-                          ...editingChapter,
-                          targetDate: e.target.value,
-                        })
-                      }
-                      className="w-full p-2.5 rounded-xl border text-sm"
-                    />
-                    <input
-                      type="text"
-                      value={editingChapter.formulas}
-                      onChange={(e) =>
-                        setEditingChapter({
-                          ...editingChapter,
-                          formulas: e.target.value,
-                        })
-                      }
-                      className="w-full p-2.5 rounded-xl border text-sm"
-                    />
-                  </div>
-                  <textarea
-                    rows={5}
-                    value={editingChapter.requirementsText}
-                    onChange={(e) =>
-                      setEditingChapter({
-                        ...editingChapter,
-                        requirementsText: e.target.value,
-                      })
-                    }
-                    className="w-full p-3 rounded-xl border text-sm"
-                  />
-                  <div className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditingChapter(null)}
-                      className="px-4 py-2 rounded-xl bg-gray-100 text-xs font-bold"
-                    >
-                      Hủy
-                    </button>
                     <button
                       type="submit"
-                      className="px-5 py-2 rounded-xl bg-[#1B3B48] text-white text-xs font-bold"
+                      className="px-3 py-2 rounded-lg bg-[#1B3B48] text-white font-bold hover:bg-[#2C4A3E]"
                     >
-                      Lưu cập nhật
+                      + Vào điểm
                     </button>
-                  </div>
-                </form>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ===================================================================
-            MỤC 04: HỒ SƠ TIẾN ĐỘ CÁ NHÂN, BÀI KIỂM TRA TRÊN LỚP & NHẬN XÉT
-        =================================================================== */}
-        {activeView === "progress" && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-[#E2DFD7] flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <span className="text-xs font-bold uppercase text-[#5C7667]">
-                  Mục 04 • Năm học:{" "}
-                  {selectedAcademicYear === "ALL"
-                    ? "Tất cả"
-                    : selectedAcademicYear}
-                </span>
-                <h2 className="text-2xl font-bold text-[#1B3B48]">
-                  Tiến độ Cá nhân, Kết quả Bài Kiểm tra trên lớp & Nhận xét
-                </h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="px-3.5 py-2 rounded-xl bg-[#5C7667] text-white text-xs font-bold"
-                >
-                  🖨 In Phiếu Báo cáo
-                </button>
-                <button
-                  onClick={goBack}
-                  className="px-4 py-2 rounded-xl bg-[#EFECE6] text-[#1B3B48] text-xs font-bold hover:bg-[#E2DFD7]"
-                >
-                  ← Quay lại trang trước
-                </button>
-              </div>
-            </div>
-
-            {appData.students.length === 0 ? (
-              <div className="bg-white p-8 rounded-2xl border border-[#E2DFD7] text-center space-y-3">
-                <p className="text-sm text-[#5C7667]">
-                  Chưa có hồ sơ học sinh nào.
-                </p>
-                {currentUser.role === "teacher" && (
-                  <button
-                    onClick={() => navigateTo("students_admin")}
-                    className="bg-[#1B3B48] text-white px-4 py-2 rounded-xl text-xs font-bold"
-                  >
-                    Vào Mục 09 để thêm học sinh từ Excel →
-                  </button>
-                )}
-              </div>
-            ) : (
-              <>
-                {currentUser.role === "teacher" && (
-                  <div className="bg-white p-4 rounded-2xl border border-[#E2DFD7] flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-bold text-[#5C7667]">
-                        Lọc theo lớp:
-                      </span>
-                      <button
-                        onClick={() => setSelectedClassFilter("ALL")}
-                        className={`px-3 py-1 rounded-lg text-xs font-bold ${
-                          selectedClassFilter === "ALL"
-                            ? "bg-[#1B3B48] text-white"
-                            : "bg-[#EFECE6] text-[#1B3B48]"
-                        }`}
-                      >
-                        Tất cả ({yearFilteredStudents.length} HS)
-                      </button>
-                      {yearFilteredClasses.map((c) => {
-                        const cnt = getStudentsOfClass(c.id, yearFilteredStudents).length;
-                        return (
-                          <button
-                            key={c.id}
-                            onClick={() => setSelectedClassFilter(c.id)}
-                            className={`px-3 py-1 rounded-lg text-xs font-bold ${
-                              selectedClassFilter === c.id
-                                ? "bg-[#1B3B48] text-white"
-                                : "bg-[#EFECE6] text-[#1B3B48]"
-                            }`}
-                          >
-                            Lớp {c.id} ({cnt} HS)
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-[#1B3B48]">
-                        Chọn học sinh:
-                      </span>
-                      <select
-                        value={activeStudent?.id || ""}
-                        onChange={(e) => setSelectedStudentId(e.target.value)}
-                        className="p-2 rounded-xl border border-[#E2DFD7] text-sm font-semibold bg-[#F7F6F2]"
-                      >
-                        {yearFilteredStudents
-                          .filter(
-                            (s) =>
-                              selectedClassFilter === "ALL" ||
-                              s.classId === selectedClassFilter
-                          )
-                          .map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name} ({s.classId})
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                  </div>
+                  </form>
                 )}
 
-                {activeStudent && (
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <div className="bg-white p-5 rounded-2xl border border-[#E2DFD7] space-y-1">
-                        <span className="text-xs text-[#5C7667] font-semibold">
-                          Học sinh & Mục tiêu Đại học
-                        </span>
-                        <div className="text-lg font-extrabold text-[#1B3B48]">
-                          {activeStudent.name} ({activeStudent.classId})
-                        </div>
-                        <div className="text-xs font-bold text-[#5C7667]">
-                          NV / Thành tích:{" "}
-                          {activeStudent.universityGoal || "Đang cập nhật"}
-                        </div>
-                      </div>
-
-                      <div className="bg-white p-5 rounded-2xl border border-[#E2DFD7] space-y-1">
-                        <span className="text-xs text-[#5C7667] font-semibold">
-                          Điểm trung bình các bài kiểm tra
-                        </span>
-                        <div className="text-3xl font-black text-[#1B3B48]">
-                          {activeStudent.score}{" "}
-                          <span className="text-xs font-normal text-[#5C7667]">
-                            / 10 (Mục tiêu {activeStudent.targetScore})
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="bg-white p-5 rounded-2xl border border-[#E2DFD7] space-y-1">
-                        <span className="text-xs text-[#5C7667] font-semibold">
-                          Chuyên cần (Đi học đầy đủ)
-                        </span>
-                        <div className="text-base font-extrabold text-[#2C4A3E]">
-                          {activeStudent.attendanceRate}% —{" "}
-                          {activeStudent.attendanceNote}
-                        </div>
-                      </div>
-
-                      <div className="bg-white p-5 rounded-2xl border border-[#E2DFD7] space-y-1">
-                        <span className="text-xs text-[#5C7667] font-semibold">
-                          Thái độ học tập & Chú ý bài
-                        </span>
-                        <div className="text-sm font-bold text-[#1B3B48]">
-                          {activeStudent.attitude}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* BẢNG KẾT QUẢ BÀI KIỂM TRA TRÊN LỚP */}
-                    <div className="bg-white p-6 rounded-2xl border border-[#E2DFD7] space-y-4">
-                      <h3 className="font-bold text-base text-[#1B3B48]">
-                        📝 Kết quả Bài Kiểm tra trên lớp của {activeStudent.name}
-                      </h3>
-
-                      {currentUser.role === "teacher" && (
-                        <form
-                          onSubmit={handleAddInClassTest}
-                          className="p-4 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] space-y-3"
-                        >
-                          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
-                            <input
-                              type="text"
-                              required
-                              value={classTestForm.testName}
-                              onChange={(e) =>
-                                setClassTestForm({
-                                  ...classTestForm,
-                                  testName: e.target.value,
-                                })
-                              }
-                              placeholder="Tên bài KT (VD: Kiểm tra Chương 1)"
-                              className="sm:col-span-2 p-2 rounded-lg border text-xs bg-white"
-                            />
-                            <select
-                              value={classTestForm.testType}
-                              onChange={(e) =>
-                                setClassTestForm({
-                                  ...classTestForm,
-                                  testType: e.target.value,
-                                })
-                              }
-                              className="p-2 rounded-lg border text-xs bg-white"
-                            >
-                              <option value="Kiểm tra 15 phút">
-                                Kiểm tra 15 phút
-                              </option>
-                              <option value="Kiểm tra định kỳ / 1 tiết">
-                                Kiểm tra định kỳ / 1 tiết
-                              </option>
-                              <option value="Kiểm tra Giữa kì">
-                                Kiểm tra Giữa kì
-                              </option>
-                              <option value="Kiểm tra Cuối kì">
-                                Kiểm tra Cuối kì
-                              </option>
-                            </select>
-                            <input
-                              type="number"
-                              step="0.1"
-                              required
-                              value={classTestForm.score}
-                              onChange={(e) =>
-                                setClassTestForm({
-                                  ...classTestForm,
-                                  score: e.target.value,
-                                })
-                              }
-                              placeholder="Điểm đạt được"
-                              className="p-2 rounded-lg border text-xs bg-white"
-                            />
-                            <input
-                              type="text"
-                              value={classTestForm.date}
-                              onChange={(e) =>
-                                setClassTestForm({
-                                  ...classTestForm,
-                                  date: e.target.value,
-                                })
-                              }
-                              placeholder="Ngày kiểm tra"
-                              className="p-2 rounded-lg border text-xs bg-white"
-                            />
-                          </div>
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <input
-                              type="text"
-                              value={classTestForm.teacherNote}
-                              onChange={(e) =>
-                                setClassTestForm({
-                                  ...classTestForm,
-                                  teacherNote: e.target.value,
-                                })
-                              }
-                              placeholder="Nhận xét bài làm..."
-                              className="flex-1 p-2 rounded-lg border text-xs bg-white"
-                            />
-                            <button
-                              type="submit"
-                              className="bg-[#1B3B48] text-white px-4 py-2 rounded-lg text-xs font-bold"
-                            >
-                              Lưu điểm bài kiểm tra
-                            </button>
-                          </div>
-                        </form>
-                      )}
-
-                      {(activeStudent.inClassTests || []).length === 0 ? (
-                        <p className="text-xs text-[#5C7667]">
-                          Chưa có bài kiểm tra trên lớp nào được ghi nhận.
-                        </p>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs border-collapse">
-                            <thead>
-                              <tr className="border-b border-[#E2DFD7] text-[#5C7667] uppercase">
-                                <th className="py-2.5">Ngày</th>
-                                <th className="py-2.5">Loại bài</th>
-                                <th className="py-2.5">Tên bài kiểm tra</th>
-                                <th className="py-2.5">Điểm số</th>
-                                <th className="py-2.5">Nhận xét bài làm</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[#EFECE6]">
-                              {(activeStudent.inClassTests || []).map((t) => (
-                                <tr key={t.id}>
-                                  <td className="py-3">{t.date}</td>
-                                  <td className="py-3">{t.testType}</td>
-                                  <td className="py-3 font-bold text-[#1B3B48]">
-                                    {t.testName}
-                                  </td>
-                                  <td className="py-3 font-black text-base text-[#1B3B48]">
-                                    {t.score}/{t.maxScore || 10}
-                                  </td>
-                                  <td className="py-3 text-[#5C7667]">
-                                    {t.teacherNote || "—"}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* NHẬN XÉT CHUNG & GỬI MAIL RIÊNG */}
-                    <div className="bg-white p-6 rounded-2xl border border-[#E2DFD7] space-y-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h3 className="font-bold text-base text-[#1B3B48]">
-                          Nhận xét của Giáo viên & Gửi Báo cáo Email riêng cho {activeStudent.name}
-                        </h3>
-                        {currentUser.role === "teacher" && (
-                          <button
-                            onClick={() =>
-                              setEmailPreviewModal(
-                                buildStudentReportEmail(activeStudent)
-                              )
-                            }
-                            className="bg-[#5C7667] text-white px-3.5 py-1.5 rounded-xl text-xs font-bold"
-                          >
-                            ✉ Gửi Báo cáo Riêng qua Email cho PH/HS {activeStudent.name}
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="p-4 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] text-sm">
-                        <strong>
-                          Nhận xét của Thầy {TEACHER_INFO.fullName}:
-                        </strong>{" "}
-                        "{activeStudent.teacherComment}"
-                      </div>
-
-                      {currentUser.role === "teacher" && (
-                        <div className="pt-3 border-t border-[#E2DFD7] grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          <input
-                            type="text"
-                            value={activeStudent.attitude}
-                            onChange={(e) =>
-                              updateStudentField(activeStudent.id, {
-                                attitude: e.target.value,
-                              })
-                            }
-                            placeholder="Thái độ chú ý bài..."
-                            className="p-2 rounded-lg border text-xs"
-                          />
-                          <input
-                            type="text"
-                            value={activeStudent.universityGoal || ""}
-                            onChange={(e) =>
-                              updateStudentField(activeStudent.id, {
-                                universityGoal: e.target.value,
-                              })
-                            }
-                            placeholder="Trường ĐH mục tiêu..."
-                            className="p-2 rounded-lg border text-xs"
-                          />
-                          <input
-                            type="text"
-                            value={activeStudent.teacherComment}
-                            onChange={(e) =>
-                              updateStudentField(activeStudent.id, {
-                                teacherComment: e.target.value,
-                              })
-                            }
-                            placeholder="Nhận xét của GV..."
-                            className="p-2 rounded-lg border text-xs"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ===================================================================
-            MỤC 05: KHO TÀI LIỆU THEO LỚP/CHƯƠNG & GIAO BÀI TẬP QUA MAIL
-        =================================================================== */}
-        {activeView === "documents" && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-[#E2DFD7] flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <span className="text-xs font-bold uppercase text-[#5C7667]">
-                  Mục 05 • Kho Tài liệu Lớp/Chương & Giao Bài tập qua Email
-                </span>
-                <h2 className="text-2xl font-bold text-[#1B3B48]">
-                  Kho Tài liệu Học tập Theo Lớp/Chương, Giao Bài tập & Nơi Nộp Bài
-                </h2>
-                <p className="text-xs text-[#5C7667] mt-1">
-                  Khi Giáo viên tải tài liệu mới lên Kho Tài liệu, mục Tin tức <strong>📘 Học thuật</strong> sẽ tự động cập nhật để Phụ huynh và Học sinh theo dõi.
-                </p>
-              </div>
-              <button
-                onClick={goBack}
-                className="px-4 py-2 rounded-xl bg-[#EFECE6] text-[#1B3B48] text-xs font-bold hover:bg-[#E2DFD7]"
-              >
-                ← Quay lại trang trước
-              </button>
-            </div>
-
-            {/* KHU VỰC 1: TẢI LÊN & TRA CỨU TÀI LIỆU THEO TỪNG LỚP, TỪNG CHƯƠNG */}
-            <div className="bg-white p-6 rounded-2xl border-2 border-[#2C4A3E] space-y-5 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
-                <div>
-                  <h3 className="font-bold text-base text-[#1B3B48]">
-                    📚 Kho Tài Liệu Học Tập Theo Từng Lớp & Từng Chương Trong Lộ Trình
-                  </h3>
-                  <p className="text-xs text-[#5C7667]">
-                    Đồng bộ trực tiếp với Mục 03 (Lộ trình Chương) và Mục 01 (Tin tức Học thuật).
-                  </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-[#EFECE6] text-[#1B3B48] font-mono uppercase">
+                        <th className="p-3">Ngày</th>
+                        <th className="p-3">Bài kiểm tra / Bài tập</th>
+                        <th className="p-3">Điểm số</th>
+                        <th className="p-3">Nhận xét của Giáo viên</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#E5E0D8]">
+                      {selectedStudent.inClassTests.map((t) => (
+                        <tr key={t.id} className="hover:bg-stone-50">
+                          <td className="p-3 font-mono text-stone-500">{t.date}</td>
+                          <td className="p-3 font-bold text-[#1B3B48]">{t.testName}</td>
+                          <td className="p-3">
+                            <span className="px-2.5 py-1 rounded-full font-bold bg-[#1B3B48] text-[#E9C46A]">
+                              {t.score} / {t.maxScore}
+                            </span>
+                          </td>
+                          <td className="p-3 text-stone-600">{t.note}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
-              {currentUser.role === "teacher" && (
-                <form
-                  onSubmit={handleUploadDocInModule05}
-                  className="p-4 rounded-2xl bg-[#F7F6F2] border border-[#E2DFD7] space-y-3"
-                >
-                  <div className="text-xs font-extrabold text-[#1B3B48]">
-                    ➕ Giáo viên tải Tài liệu mới lên (Tự động tạo Bản tin Học thuật):
+              <div className="bg-white rounded-2xl p-6 border border-[#E5E0D8] shadow-sm flex flex-col justify-between">
+                <div>
+                  <h3 className="font-serif font-bold text-lg text-[#1B3B48] mb-3">
+                    📝 Đánh giá Chuyên cần & Nhận xét Học lực
+                  </h3>
+                  <div className="space-y-3 text-xs">
+                    <div className="p-3.5 rounded-xl bg-[#F7F6F2] border border-[#E5E0D8]">
+                      <span className="font-mono text-[10px] uppercase text-stone-400 block mb-1">
+                        THÁI ĐỘ HỌC TẬP
+                      </span>
+                      <p className="font-semibold text-[#1B3B48]">{selectedStudent.attitude}</p>
+                    </div>
+                    <div className="p-3.5 rounded-xl bg-[#F7F6F2] border border-[#E5E0D8]">
+                      <span className="font-mono text-[10px] uppercase text-stone-400 block mb-1">
+                        NHẬN XÉT TỔNG HỢP CỦA GIÁO VIÊN
+                      </span>
+                      <p className="text-stone-700 leading-relaxed">
+                        {selectedStudent.teacherComment}
+                      </p>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <select
-                      value={docForm.grade}
-                      onChange={(e) => {
-                        const g = e.target.value;
-                        const firstChap =
-                          (appData.curriculum?.[g] || [])[0]?.id || "";
-                        const firstCls =
-                          appData.classes.find((c) => c.grade === g)?.id ||
-                          "ALL";
-                        setDocForm({
-                          ...docForm,
-                          grade: g,
-                          chapterId: firstChap,
-                          classId: firstCls,
+                </div>
+
+                {userRole === "teacher" && (
+                  <div className="mt-6 pt-4 border-t border-[#E5E0D8] space-y-2">
+                    <button
+                      onClick={() => setEditingStudentModal({ ...selectedStudent, originalId: selectedStudent.id })}
+                      className="w-full py-2.5 rounded-xl bg-[#EFECE6] text-[#1B3B48] text-xs font-bold hover:bg-[#E5E0D8]"
+                    >
+                      ✎ Chỉnh sửa Hồ sơ / Nhận xét Học sinh
+                    </button>
+                    <button
+                      onClick={() => {
+                        const mail = buildStudentReportEmail(selectedStudent);
+                        setEmailPreviewModal({
+                          to: selectedStudent.email,
+                          subject: mail.subject,
+                          body: mail.body,
                         });
                       }}
-                      className="p-2.5 rounded-xl border text-xs bg-white font-bold"
+                      className="w-full py-2.5 rounded-xl bg-[#1B3B48] text-white text-xs font-bold hover:bg-[#2C4A3E]"
                     >
-                      <option value="10">Khối 10</option>
-                      <option value="11">Khối 11</option>
-                      <option value="12">Khối 12</option>
+                      ✉ Gửi Phiếu Báo Cáo Học Tập qua Email
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* MỤC 05A: KHO TÀI LIỆU LỚP / CHƯƠNG (ĐÃ TÁCH RIÊNG)           */}
+        {/* ============================================================ */}
+        {activeView === "documents" && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E5E0D8] pb-4">
+              <div>
+                <span className="text-xs font-mono uppercase tracking-widest text-[#9C6644] block mb-1">
+                  MỤC 05A // STUDY MATERIALS REPOSITORY (TÁCH RIÊNG KHO TÀI LIỆU)
+                </span>
+                <h2 className="text-2xl font-serif font-bold text-[#1B3B48]">
+                  Kho Tài liệu Lớp / Chương (Tải Tài liệu Riêng)
+                </h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setActiveView("homeworks")}
+                  className="px-4 py-2 rounded-xl bg-[#9C6644] text-white text-xs font-bold hover:bg-[#7d5035] shadow-sm"
+                >
+                  📝 Chuyển sang Mục 05B: Giao Bài Tập & Nộp Bài →
+                </button>
+                <button
+                  onClick={() => setActiveView("home")}
+                  className="text-sm text-[#5C7667] hover:text-[#1B3B48] font-medium px-3 py-2"
+                >
+                  ← Trang chủ
+                </button>
+              </div>
+            </div>
+
+            {/* FORM GIÁO VIÊN TẢI TÀI LIỆU MỚI LÊN KHO */}
+            {userRole === "teacher" && (
+              <div className="bg-[#EFECE6] rounded-2xl p-6 border border-[#D5CFC4]">
+                <h3 className="font-serif font-bold text-lg text-[#1B3B48] mb-3">
+                  📂 Tải Tài liệu / Chuyên đề Mới lên Kho Học Liệu (Đồng bộ Mục 01 & Mục 03)
+                </h3>
+                <form onSubmit={handleUploadDocInModule05} className="space-y-3 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <select
+                      value={docUploadForm.grade}
+                      onChange={(e) => {
+                        const g = Number(e.target.value) as 10 | 11 | 12;
+                        setDocUploadForm({
+                          ...docUploadForm,
+                          grade: g,
+                          chapter: curriculumData[g]?.[0]?.title || "",
+                        });
+                      }}
+                      className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold text-[#1B3B48]"
+                    >
+                      <option value={10}>Khối 10</option>
+                      <option value={11}>Khối 11</option>
+                      <option value={12}>Khối 12</option>
                     </select>
 
                     <select
-                      value={docForm.classId}
+                      value={docUploadForm.classId}
                       onChange={(e) =>
-                        setDocForm({ ...docForm, classId: e.target.value })
+                        setDocUploadForm({ ...docUploadForm, classId: e.target.value })
                       }
-                      className="p-2.5 rounded-xl border text-xs bg-white font-bold"
+                      className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold text-[#9C6644]"
                     >
-                      <option value="ALL">
-                        Tất cả các lớp Khối {docForm.grade}
-                      </option>
-                      {appData.classes
-                        .filter((c) => c.grade === docForm.grade)
-                        .map((c) => (
-                          <option key={c.id} value={c.id}>
-                            Lớp {c.id} ({c.name})
-                          </option>
-                        ))}
+                      <option value="ALL">Tất cả các lớp thuộc Khối</option>
+                      {classesList.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          Lớp {c.id} - {c.name}
+                        </option>
+                      ))}
                     </select>
 
                     <select
-                      value={docForm.chapterId}
+                      value={docUploadForm.chapter}
                       onChange={(e) =>
-                        setDocForm({ ...docForm, chapterId: e.target.value })
+                        setDocUploadForm({ ...docUploadForm, chapter: e.target.value })
                       }
-                      className="md:col-span-2 p-2.5 rounded-xl border text-xs bg-white font-bold"
+                      className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white md:col-span-2"
                     >
-                      {(appData.curriculum?.[docForm.grade] || []).map(
-                        (chap) => (
-                          <option key={chap.id} value={chap.id}>
-                            {chap.title}
-                          </option>
-                        )
-                      )}
+                      {(curriculumData[docUploadForm.grade as 10 | 11 | 12] || []).map((c) => (
+                        <option key={c.code} value={c.title}>
+                          {c.title}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <input
                       type="text"
                       required
-                      value={docForm.title}
+                      placeholder="Tên tài liệu (VD: Chuyên đề Ester - Lipid chuẩn IUPAC)..."
+                      value={docUploadForm.title}
                       onChange={(e) =>
-                        setDocForm({ ...docForm, title: e.target.value })
+                        setDocUploadForm({ ...docUploadForm, title: e.target.value })
                       }
-                      placeholder="Tên tài liệu (VD: Lý thuyết & Bài tập Ester)"
-                      className="p-2.5 rounded-xl border text-xs bg-white"
+                      className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white md:col-span-2"
                     />
+                    <select
+                      value={docUploadForm.type}
+                      onChange={(e) => setDocUploadForm({ ...docUploadForm, type: e.target.value })}
+                      className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                    >
+                      <option value="PDF Chuyên đề">PDF Chuyên đề</option>
+                      <option value="Phiếu Bài Tập">Phiếu Bài Tập</option>
+                      <option value="Sơ đồ tư duy">Sơ đồ tư duy</option>
+                      <option value="Video Bài Giảng">Video Bài Giảng</option>
+                    </select>
                     <input
-                      type="text"
-                      value={docForm.externalUrl}
-                      onChange={(e) =>
-                        setDocForm({ ...docForm, externalUrl: e.target.value })
-                      }
-                      placeholder="Link tải Google Drive / OneDrive (nếu có)..."
-                      className="p-2.5 rounded-xl border text-xs bg-white"
-                    />
-                    <input
-                      type="file"
-                      onChange={(e) =>
-                        handleFlexibleFileUpload(e, (res) =>
-                          setDocForm((prev) => ({
-                            ...prev,
-                            title: prev.title || res.fileName,
-                            fileName: res.fileName,
-                            fileType: res.fileType,
-                            fileDataUrl: res.dataUrl,
-                          }))
-                        )
-                      }
-                      className="text-xs"
+                      type="url"
+                      placeholder="Link Google Drive / PDF ngoài (Khuyên dùng)..."
+                      value={docUploadForm.url}
+                      onChange={(e) => setDocUploadForm({ ...docUploadForm, url: e.target.value })}
+                      className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
                     />
                   </div>
 
-                  <div className="flex justify-end">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+                    <div className="flex items-center gap-2">
+                      <label className="px-3 py-1.5 rounded-lg bg-white border border-[#D5CFC4] cursor-pointer hover:bg-stone-50 font-semibold text-[#1B3B48]">
+                        📎 Đính kèm tệp trực tiếp (&lt;600KB hoặc Ảnh)
+                        <input
+                          type="file"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) {
+                              handleFlexibleFileUpload(f, (res) => {
+                                setDocUploadForm((prev) => ({
+                                  ...prev,
+                                  fileName: res.fileName,
+                                  fileDataUrl: res.dataUrl,
+                                  size: res.sizeLabel,
+                                }));
+                              });
+                            }
+                          }}
+                        />
+                      </label>
+                      {docUploadForm.fileName && (
+                        <span className="text-emerald-700 font-semibold">
+                          ✓ Đã chọn: {docUploadForm.fileName} ({docUploadForm.size})
+                        </span>
+                      )}
+                    </div>
                     <button
                       type="submit"
-                      className="bg-[#2C4A3E] text-white px-5 py-2 rounded-xl text-xs font-bold"
+                      className="px-5 py-2.5 rounded-xl bg-[#1B3B48] text-white font-bold hover:bg-[#2C4A3E] shadow-sm"
                     >
-                      📤 Tải Tài Liệu Lên & Cập Nhật Tin Tức
+                      + Đăng Tài Liệu Lên Kho
                     </button>
                   </div>
                 </form>
-              )}
+              </div>
+            )}
 
-              {/* Bộ lọc Kho tài liệu */}
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-xs font-bold text-[#5C7667]">
-                  Lọc theo Lớp:
-                </span>
+            {/* BỘ LỌC TÀI LIỆU */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-[#E5E0D8]">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-[#1B3B48]">Lọc theo Lớp:</span>
                 <select
                   value={docFilterClass}
                   onChange={(e) => setDocFilterClass(e.target.value)}
-                  className="p-2 rounded-xl border text-xs bg-[#F7F6F2] font-bold"
+                  className="px-3 py-1.5 rounded-lg border border-[#D5CFC4] text-xs font-semibold bg-[#F7F6F2]"
                 >
                   <option value="ALL">Tất cả các lớp</option>
-                  {appData.classes.map((c) => (
+                  {classesList.map((c) => (
                     <option key={c.id} value={c.id}>
-                      Lớp {c.id}
+                      Lớp {c.id} - {c.name}
                     </option>
                   ))}
                 </select>
-
-                <span className="text-xs font-bold text-[#5C7667]">
-                  Lọc theo Chương:
-                </span>
-                <select
-                  value={docFilterChapter}
-                  onChange={(e) => setDocFilterChapter(e.target.value)}
-                  className="p-2 rounded-xl border text-xs bg-[#F7F6F2] font-bold"
-                >
-                  <option value="ALL">Tất cả các chương (10 • 11 • 12)</option>
-                  {["10", "11", "12"].flatMap((g) =>
-                    (appData.curriculum?.[g] || []).map((ch) => (
-                      <option key={ch.id} value={ch.id}>
-                        [Khối {g}] {ch.title}
-                      </option>
-                    ))
-                  )}
-                </select>
               </div>
+              <span className="text-xs text-stone-500 font-mono">
+                Tổng số: {documents.length} tài liệu học tập
+              </span>
+            </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {(appData.documents || [])
-                  .filter((d) => {
-                    if (!matchesSelectedYear(d.academicYear)) return false;
-                    if (
-                      docFilterClass !== "ALL" &&
-                      d.classId !== "ALL" &&
-                      d.classId !== docFilterClass
-                    ) {
-                      return false;
-                    }
-                    if (
-                      docFilterChapter !== "ALL" &&
-                      d.chapterId !== docFilterChapter
-                    ) {
-                      return false;
-                    }
-                    if (currentUser.role === "student") {
-                      return (
-                        d.classId === "ALL" || d.classId === currentUser.classId
-                      );
-                    }
-                    return true;
-                  })
-                  .map((doc) => (
-                    <div
-                      key={doc.id}
-                      className="p-4 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] flex items-center justify-between gap-3"
-                    >
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="px-2 py-0.5 rounded bg-[#1B3B48] text-white text-[10px] font-bold">
-                            {doc.classId === "ALL"
-                              ? `Khối ${doc.grade}`
-                              : `Lớp ${doc.classId}`}
+            {/* DANH SÁCH THẺ TÀI LIỆU */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {documents
+                .filter(
+                  (d) =>
+                    docFilterClass === "ALL" ||
+                    !d.classId ||
+                    d.classId === "ALL" ||
+                    d.classId === docFilterClass
+                )
+                .map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="bg-white rounded-2xl p-5 border border-[#E5E0D8] shadow-sm flex flex-col justify-between hover:border-[#5C7667] transition-all"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-[#1B3B48]/10 text-[#1B3B48]">
+                          Khối {doc.grade} • {doc.classId === "ALL" ? "Mọi lớp" : doc.classId}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[11px] font-mono text-stone-400">
+                            {doc.updatedAt}
                           </span>
-                          <span className="px-2 py-0.5 rounded bg-[#EFECE6] text-[#2C4A3E] text-[10px] font-bold">
-                            {doc.chapterTitle}
-                          </span>
-                        </div>
-                        <div className="font-bold text-sm text-[#1B3B48] truncate">
-                          📄 {doc.title}
-                        </div>
-                        <div className="text-[11px] text-[#5C7667]">
-                          Cập nhật: {doc.createdAt}
+                          {userRole === "teacher" && (
+                            <>
+                              <button
+                                onClick={() => setEditingDocModal({ ...doc })}
+                                className="text-[11px] px-2 py-0.5 rounded bg-[#EFECE6] text-[#1B3B48] hover:bg-[#1B3B48] hover:text-white font-semibold"
+                              >
+                                ✎ Sửa
+                              </button>
+                              <button
+                                onClick={() => handleDeleteDocument(doc.id)}
+                                className="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-bold"
+                              >
+                                ✕
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {doc.externalUrl && (
+                      <h4 className="font-serif font-bold text-[#1B3B48] text-base mb-1">
+                        {doc.title}
+                      </h4>
+                      <p className="text-xs text-[#5C7667] mb-3 line-clamp-2">{doc.chapter}</p>
+                    </div>
+
+                    <div className="pt-3 border-t border-[#E5E0D8] flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-mono text-[#9C6644] font-semibold">
+                        {doc.type} ({doc.size})
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {doc.url && doc.url !== "#" && (
                           <a
-                            href={doc.externalUrl}
+                            href={doc.url}
                             target="_blank"
                             rel="noreferrer"
-                            className="bg-[#1B3B48] text-white px-3 py-1.5 rounded-lg text-xs font-bold"
+                            className="px-3 py-1.5 rounded-lg bg-[#1B3B48] text-white text-xs font-bold hover:bg-[#2C4A3E]"
                           >
                             🔗 Mở Link
                           </a>
@@ -7320,3082 +7363,994 @@ Email: ${TEACHER_INFO.email}`;
                         {doc.fileDataUrl && (
                           <a
                             href={doc.fileDataUrl}
-                            download={doc.fileName || "tailieu"}
-                            className="bg-[#5C7667] text-white px-3 py-1.5 rounded-lg text-xs font-bold"
+                            download={doc.fileName || doc.title}
+                            className="px-3 py-1.5 rounded-lg bg-[#2C4A3E] text-white text-xs font-bold hover:bg-[#1B3B48]"
                           >
-                            ⬇ Tải File
+                            ⬇ Tải tệp
                           </a>
                         )}
                       </div>
                     </div>
-                  ))}
-              </div>
-            </div>
-
-            {/* KHU VỰC 2: GIAO BÀI TẬP QUA MAIL & NỘP BÀI TẬP */}
-            {currentUser.role === "teacher" && (
-              <form
-                onSubmit={handleAssignHomeworkAndEmail}
-                className="bg-white p-6 rounded-2xl border-2 border-[#1B3B48] space-y-4 shadow-sm"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
-                  <div>
-                    <h3 className="font-bold text-base text-[#1B3B48]">
-                      📩 Ô Giao Bài Tập Trực Tiếp Qua Email (Kèm File Bài tập & Link Nơi Nộp Bài)
-                    </h3>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setHwForm({ ...hwForm, sendMode: "BULK" })
-                      }
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                        hwForm.sendMode === "BULK"
-                          ? "bg-[#1B3B48] text-white"
-                          : "bg-[#EFECE6] text-[#1B3B48]"
-                      }`}
-                    >
-                      📢 Gửi hàng loạt theo Lớp
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setHwForm({
-                          ...hwForm,
-                          sendMode: "INDIVIDUAL",
-                          targetStudentId:
-                            hwForm.targetStudentId ||
-                            appData.students[0]?.id ||
-                            "",
-                        })
-                      }
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                        hwForm.sendMode === "INDIVIDUAL"
-                          ? "bg-[#2C4A3E] text-white"
-                          : "bg-[#EFECE6] text-[#1B3B48]"
-                      }`}
-                    >
-                      👤 Gửi cho từng HS / PH cụ thể
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <input
-                    type="text"
-                    required
-                    value={hwForm.title}
-                    onChange={(e) =>
-                      setHwForm({ ...hwForm, title: e.target.value })
-                    }
-                    placeholder="Tên bài tập (VD: Bài tập Ester - Lipid)"
-                    className="p-2.5 rounded-xl border border-[#E2DFD7] text-sm"
-                  />
-
-                  {hwForm.sendMode === "BULK" ? (
-                    <select
-                      value={hwForm.classId}
-                      onChange={(e) =>
-                        setHwForm({ ...hwForm, classId: e.target.value })
-                      }
-                      className="p-2.5 rounded-xl border border-[#E2DFD7] text-sm bg-white font-semibold"
-                    >
-                      <option value="ALL">Gửi toàn bộ các lớp</option>
-                      {appData.classes.map((c) => {
-                        const cnt = getStudentsOfClass(c.id).length;
-                        return (
-                          <option key={c.id} value={c.id}>
-                            Gửi cả Lớp {c.id} ({cnt} HS)
-                          </option>
-                        );
-                      })}
-                    </select>
-                  ) : (
-                    <select
-                      value={hwForm.targetStudentId}
-                      onChange={(e) =>
-                        setHwForm({
-                          ...hwForm,
-                          targetStudentId: e.target.value,
-                        })
-                      }
-                      className="p-2.5 rounded-xl border-2 border-[#2C4A3E] text-sm bg-white font-bold text-[#1B3B48]"
-                    >
-                      <option value="">
-                        -- Chọn Học sinh / Phụ huynh nhận bài --
-                      </option>
-                      {appData.students.map((st) => (
-                        <option key={st.id} value={st.id}>
-                          {st.name} (Lớp {st.classId} • {st.email})
-                        </option>
-                      ))}
-                    </select>
-                  )}
-
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-bold text-[#1B3B48]">
-                      ⏰ Cài đặt Thời gian khóa nộp bài (Tới giờ này sẽ tự khóa):
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={hwForm.deadlineISO}
-                      onChange={(e) =>
-                        setHwForm({ ...hwForm, deadlineISO: e.target.value })
-                      }
-                      className="w-full p-2 rounded-xl border-2 border-[#9C6644] text-xs font-mono font-bold bg-[#F7F6F2]"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    value={hwForm.dueDate}
-                    onChange={(e) =>
-                      setHwForm({ ...hwForm, dueDate: e.target.value })
-                    }
-                    placeholder="Ghi chú hạn nộp hiển thị thêm (Nếu để trống sẽ lấy theo giờ khóa nộp ở trên)"
-                    className="p-2.5 rounded-xl border border-[#E2DFD7] text-xs"
-                  />
-                  <div className="text-[11px] text-[#9C6644] font-semibold flex items-center">
-                    🔒 Lưu ý: Khi đồng hồ điểm đúng Thời gian khóa nộp bài ở trên, cổng nộp bài và link nộp bài của bài tập này sẽ tự động khóa lại.
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
-                  <div>
-                    <label className="block text-xs font-bold mb-1">
-                      1. Tải File Bài tập lên Web:
-                    </label>
-                    <input
-                      type="file"
-                      onChange={(e) =>
-                        handleFlexibleFileUpload(e, (res) =>
-                          setHwForm((prev) => ({
-                            ...prev,
-                            fileName: res.fileName,
-                            fileType: res.fileType,
-                            fileDataUrl: res.dataUrl,
-                          }))
-                        )
-                      }
-                      className="text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1">
-                      2. Link tải File Bài tập (Drive/OneDrive):
-                    </label>
-                    <input
-                      type="text"
-                      value={hwForm.fileUrl}
-                      onChange={(e) =>
-                        setHwForm({ ...hwForm, fileUrl: e.target.value })
-                      }
-                      placeholder="https://drive.google.com/..."
-                      className="w-full p-2.5 rounded-xl border border-[#E2DFD7] text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1">
-                      3. Link dẫn tới Nơi Nộp Bài trong Email:
-                    </label>
-                    <input
-                      type="text"
-                      value={hwForm.submissionPortalLink}
-                      onChange={(e) =>
-                        setHwForm({
-                          ...hwForm,
-                          submissionPortalLink: e.target.value,
-                        })
-                      }
-                      className="w-full p-2.5 rounded-xl border border-[#E2DFD7] text-xs"
-                    />
-                  </div>
-                </div>
-
-                <textarea
-                  rows={2}
-                  value={hwForm.description}
-                  onChange={(e) =>
-                    setHwForm({ ...hwForm, description: e.target.value })
-                  }
-                  placeholder="Ghi chú hướng dẫn làm bài..."
-                  className="w-full p-2.5 rounded-xl border border-[#E2DFD7] text-xs"
-                />
-
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    className="bg-[#1B3B48] text-white px-5 py-2.5 rounded-xl text-xs font-bold"
-                  >
-                    {hwForm.sendMode === "INDIVIDUAL"
-                      ? "Giao Bài tập & Gửi Mail Riêng cho HS/PH"
-                      : "Giao Bài tập & Gửi Mail Hàng loạt"}
-                  </button>
-                </div>
-              </form>
-            )}
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-[#E2DFD7] space-y-4">
-                <h3 className="font-bold text-base text-[#1B3B48]">
-                  📋 Danh sách Bài tập đã giao (
-                  {
-                    (appData.homeworks || []).filter((h) =>
-                      matchesSelectedYear(h.academicYear)
-                    ).length
-                  }
-                  )
-                </h3>
-                {(appData.homeworks || []).filter((h) =>
-                  matchesSelectedYear(h.academicYear)
-                ).length === 0 ? (
-                  <div className="p-6 rounded-xl bg-[#F7F6F2] text-center text-xs text-[#5C7667]">
-                    Chưa có bài tập nào được giao.
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {(appData.homeworks || [])
-                      .filter((h) => matchesSelectedYear(h.academicYear))
-                      .map((hw) => {
-                        const statusInfo = getHomeworkDeadlineStatus(
-                          hw,
-                          realTimeNow
-                        );
-                        return (
-                          <div
-                            key={hw.id}
-                            className={`p-4 rounded-xl border space-y-2.5 ${
-                              statusInfo.isExpired
-                                ? "bg-red-50/60 border-red-200"
-                                : "bg-[#F7F6F2] border-[#E2DFD7]"
-                            }`}
-                          >
-                            <div className="flex flex-wrap items-start justify-between gap-2">
-                              <div>
-                                <span className="font-bold text-sm text-[#1B3B48] block">
-                                  {hw.title} ({hw.targetLabel || hw.classId})
-                                </span>
-                                {hw.description && (
-                                  <p className="text-xs text-[#5C7667] mt-0.5">
-                                    {hw.description}
-                                  </p>
-                                )}
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span
-                                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
-                                    statusInfo.isExpired
-                                      ? "bg-red-600 text-white"
-                                      : "bg-emerald-100 text-emerald-900"
-                                  }`}
-                                >
-                                  {statusInfo.remainingText ||
-                                    `Hạn: ${hw.dueDate}`}
-                                </span>
-                                {currentUser.role === "teacher" && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteHomework(hw)}
-                                    className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition"
-                                    title="Xóa bài tập đã giao này"
-                                  >
-                                    🗑 Xóa bài tập
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="text-[11px] font-semibold text-[#9C6644]">
-                              ⏰ Thời hạn hoàn thành: {statusInfo.label}
-                            </div>
-
-                            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                              <div className="flex flex-wrap gap-2">
-                                {!statusInfo.isExpired ? (
-                                  <>
-                                    {hw.fileUrl && (
-                                      <a
-                                        href={hw.fileUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="bg-[#1B3B48] text-white px-3 py-1 rounded-lg text-xs font-bold"
-                                      >
-                                        📥 Mở Link File Bài tập
-                                      </a>
-                                    )}
-                                    {hw.fileDataUrl && (
-                                      <a
-                                        href={hw.fileDataUrl}
-                                        download={hw.fileName || "baitap"}
-                                        className="bg-[#5C7667] text-white px-3 py-1 rounded-lg text-xs font-bold"
-                                      >
-                                        📎 Tải File Đề ({hw.fileName})
-                                      </a>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setHwSubForm((prev) => ({
-                                          ...prev,
-                                          homeworkId: hw.id,
-                                        }))
-                                      }
-                                      className="bg-[#2C4A3E] text-[#E9C46A] px-3 py-1 rounded-lg text-xs font-bold"
-                                    >
-                                      👉 Chọn nộp bài tập này
-                                    </button>
-                                  </>
-                                ) : (
-                                  <span className="text-xs font-bold text-red-700 bg-red-100 px-3 py-1 rounded-lg">
-                                    🔒 Đã hết thời gian hoàn thành — Link nộp bài tập đã khóa
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Giáo viên có thể chỉnh lại giờ hạn nộp nếu muốn mở lại */}
-                              {currentUser.role === "teacher" && (
-                                <div className="flex items-center gap-1 text-[11px]">
-                                  <span className="text-[#5C7667] font-semibold">
-                                    Đổi hạn:
-                                  </span>
-                                  <input
-                                    type="datetime-local"
-                                    value={hw.deadlineISO || ""}
-                                    onChange={(e) => {
-                                      const newIso = e.target.value;
-                                      const nextHws = (
-                                        appData.homeworks || []
-                                      ).map((x) =>
-                                        x.id === hw.id
-                                          ? {
-                                              ...x,
-                                              deadlineISO: newIso,
-                                              dueDate: newIso
-                                                ? new Date(
-                                                    newIso
-                                                  ).toLocaleString("vi-VN")
-                                                : x.dueDate,
-                                            }
-                                          : x
-                                      );
-                                      saveToAll({
-                                        ...appData,
-                                        homeworks: nextHws,
-                                      });
-                                    }}
-                                    className="p-1 rounded border bg-white text-[11px] font-mono"
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                )}
-              </div>
-
-              <div className="lg:col-span-5 bg-white p-6 rounded-2xl border-2 border-[#5C7667] space-y-4 flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-base text-[#1B3B48]">
-                      📤 Nơi Học Sinh Nộp Bài Tập Về Nhà
-                    </h3>
-                    <span className="px-2.5 py-0.5 rounded-full bg-[#2C4A3E] text-white text-[11px] font-bold">
-                      {(appData.homeworkSubmissions || []).length} bài đã nộp
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#5C7667]">
-                    Chỉ các bài tập còn trong thời gian hoàn thành mới mở cổng nộp bài. Khi tới hạn, link nộp bài sẽ tự động khóa.
-                  </p>
-
-                  <form onSubmit={handleSubmitHomeworkWork} className="space-y-3">
-                    <select
-                      required
-                      value={hwSubForm.homeworkId}
-                      onChange={(e) =>
-                        setHwSubForm({
-                          ...hwSubForm,
-                          homeworkId: e.target.value,
-                        })
-                      }
-                      className="w-full p-2.5 rounded-xl border text-xs bg-white font-semibold"
-                    >
-                      <option value="">-- 1. Chọn bài tập cần nộp --</option>
-                      {(appData.homeworks || []).map((hw) => {
-                        const st = getHomeworkDeadlineStatus(hw, realTimeNow);
-                        return (
-                          <option
-                            key={hw.id}
-                            value={hw.id}
-                            disabled={st.isExpired}
-                          >
-                            {st.isExpired
-                              ? `🔒 [ĐÃ HẾT HẠN - KHÓA NỘP] ${hw.title}`
-                              : `🟢 ${hw.title} (${st.label})`}
-                          </option>
-                        );
-                      })}
-                    </select>
-
-                    {/* Chọn Học sinh nộp bài (hiển thị cho Giáo viên khi nộp thử / nộp hộ hoặc kiểm tra) */}
-                    {currentUser.role === "teacher" ? (
-                      <div className="space-y-2 p-2.5 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7]">
-                        <label className="block text-[11px] font-bold text-[#1B3B48]">
-                          2. Chọn Học sinh nộp bài (Dành cho GV nộp hộ / kiểm tra):
-                        </label>
-                        {appData.students.length > 0 ? (
-                          <select
-                            value={hwSubForm.studentId || activeStudent?.id || ""}
-                            onChange={(e) =>
-                              setHwSubForm({
-                                ...hwSubForm,
-                                studentId: e.target.value,
-                              })
-                            }
-                            className="w-full p-2 rounded-lg border text-xs bg-white font-bold text-[#1B3B48]"
-                          >
-                            {appData.students.map((st) => (
-                              <option key={st.id} value={st.id}>
-                                👤 {st.name} (Lớp {st.classId} • Mã: {st.id})
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <div className="grid grid-cols-3 gap-2">
-                            <input
-                              type="text"
-                              value={hwSubForm.studentNameCustom}
-                              onChange={(e) =>
-                                setHwSubForm({
-                                  ...hwSubForm,
-                                  studentNameCustom: e.target.value,
-                                })
-                              }
-                              placeholder="Nhập tên HS nộp bài..."
-                              className="col-span-2 p-2 rounded-lg border text-xs bg-white"
-                            />
-                            <input
-                              type="text"
-                              value={hwSubForm.studentClassCustom}
-                              onChange={(e) =>
-                                setHwSubForm({
-                                  ...hwSubForm,
-                                  studentClassCustom: e.target.value,
-                                })
-                              }
-                              placeholder="Lớp (VD: 10A1)"
-                              className="p-2 rounded-lg border text-xs bg-white"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="p-2 rounded-xl bg-[#F7F6F2] border text-xs font-bold text-[#1B3B48]">
-                        👤 Học sinh nộp bài: {currentUser.name} (Lớp {currentUser.classId})
-                      </div>
-                    )}
-
-                    {(() => {
-                      const selectedHw = (appData.homeworks || []).find(
-                        (h) => h.id === hwSubForm.homeworkId
-                      );
-                      const st = selectedHw
-                        ? getHomeworkDeadlineStatus(selectedHw, realTimeNow)
-                        : null;
-                      if (st && st.isExpired) {
-                        return (
-                          <div className="p-3 rounded-xl bg-red-100 border border-red-300 text-red-800 text-xs font-bold">
-                            ⛔ Bài tập này đã tới thời gian hoàn thành. Link nộp bài đã khóa!
-                          </div>
-                        );
-                      }
-                      return (
-                        <>
-                          <div>
-                            <label className="block text-[11px] font-bold text-[#1B3B48] mb-1">
-                              3. Đính kèm Ảnh chụp bài làm / File bài nộp:
-                            </label>
-                            <input
-                              type="file"
-                              onChange={(e) =>
-                                handleFlexibleFileUpload(e, (res) =>
-                                  setHwSubForm((prev) => ({
-                                    ...prev,
-                                    fileName: res.fileName,
-                                    fileType: res.fileType,
-                                    fileDataUrl: res.dataUrl,
-                                  }))
-                                )
-                              }
-                              className="text-xs w-full"
-                            />
-                            {hwSubForm.fileName && (
-                              <div className="text-[11px] text-emerald-700 font-bold mt-1">
-                                ✓ Đã đính kèm: {hwSubForm.fileName}
-                              </div>
-                            )}
-                          </div>
-                          <textarea
-                            rows={2}
-                            value={hwSubForm.studentNote}
-                            onChange={(e) =>
-                              setHwSubForm({
-                                ...hwSubForm,
-                                studentNote: e.target.value,
-                              })
-                            }
-                            placeholder="Ghi chú bài nộp (VD: Em nộp bài tập chương 1 ạ)..."
-                            className="w-full p-2.5 rounded-xl border text-xs"
-                          />
-                          <button
-                            type="submit"
-                            className="w-full bg-[#2C4A3E] hover:bg-[#1B3B48] text-white py-2.5 rounded-xl text-xs font-bold transition shadow-sm"
-                          >
-                            Nộp Bài Tập Lên Hệ Thống
-                          </button>
-                        </>
-                      );
-                    })()}
-                  </form>
-                </div>
-
-                {/* DANH SÁCH BÀI NỘP HIỂN THỊ TRỰC TIẾP NGAY TRONG Ô NỘP BÀI */}
-                <div className="pt-4 border-t border-[#E2DFD7] space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-[#1B3B48]">
-                      📥 Bài làm Học sinh đã nộp ({(appData.homeworkSubmissions || []).length})
-                    </span>
-                  </div>
-
-                  {(appData.homeworkSubmissions || []).length === 0 ? (
-                    <div className="p-4 rounded-xl bg-[#F7F6F2] text-center text-xs text-[#5C7667] italic">
-                      Chưa có bài nộp nào. Khi học sinh nộp bài ở trên, bài làm sẽ hiện ngay tại đây.
-                    </div>
-                  ) : (
-                    <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-                      {(appData.homeworkSubmissions || [])
-                        .filter(
-                          (sub) =>
-                            currentUser.role === "teacher" ||
-                            sub.studentId === currentUser.studentId
-                        )
-                        .map((sub) => (
-                          <div
-                            key={sub.id}
-                            className="p-3 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] space-y-1.5 text-xs"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-extrabold text-[#1B3B48]">
-                                👤 {sub.studentName} (Lớp {sub.classId})
-                              </span>
-                              <span className="text-[10px] text-[#5C7667]">
-                                {sub.submittedAt}
-                              </span>
-                            </div>
-                            <div className="font-bold text-[#2C4A3E]">
-                              📌 Bài: {sub.homeworkTitle}
-                            </div>
-                            {sub.studentNote && (
-                              <div className="text-[#1B3B48]/90 italic">
-                                "{sub.studentNote}"
-                              </div>
-                            )}
-
-                            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                {sub.fileDataUrl ? (
-                                  <>
-                                    {sub.fileType === "image" && (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setPreviewSubmissionModal(sub)
-                                        }
-                                        className="px-2.5 py-1 rounded bg-[#1B3B48] text-[#E9C46A] text-[11px] font-bold"
-                                      >
-                                        👁 Xem ảnh bài làm
-                                      </button>
-                                    )}
-                                    <a
-                                      href={sub.fileDataUrl}
-                                      download={sub.fileName || "bailam_hs"}
-                                      className="px-2.5 py-1 rounded bg-[#5C7667] text-white text-[11px] font-bold"
-                                    >
-                                      ⬇ Tải tệp ({sub.fileName || "Bài nộp"})
-                                    </a>
-                                  </>
-                                ) : (
-                                  <span className="text-[11px] text-[#5C7667]">
-                                    (Nộp ghi chú trực tiếp)
-                                  </span>
-                                )}
-                              </div>
-
-                              {sub.gradeScore !== "" &&
-                              sub.gradeScore !== undefined ? (
-                                <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-black text-[11px]">
-                                  ✓ Đã chấm: {sub.gradeScore}/10
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-bold text-[11px]">
-                                  ⏳ Chờ chấm điểm
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* ===================================================================
-                Ô RIÊNG KIỂM TRA HỌC SINH ĐÃ NỘP BÀI HAY CHƯA & CHẤM ĐIỂM NHẬP VÀO HỒ SƠ HỌC TẬP
-            =================================================================== */}
-            <div className="bg-white p-6 rounded-2xl border-2 border-[#1B3B48] space-y-5 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EFECE6] pb-4">
-                <div className="space-y-1">
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#1B3B48] text-[#E9C46A] text-xs font-extrabold uppercase">
-                    ✅ Quản lý Nộp bài & Chấm điểm Đồng bộ Hồ sơ (Mục 04)
-                  </span>
-                  <h3 className="font-extrabold text-lg text-[#1B3B48] pt-1">
-                    Bảng Theo Dõi Học Sinh Đã Nộp / Chưa Nộp Bài & Chấm Điểm Nhập Vào Hồ Sơ Học Tập
-                  </h3>
-                  <p className="text-xs text-[#5C7667]">
-                    Giáo viên kiểm tra trạng thái nộp bài của từng học sinh, xem tệp bài làm, chấm điểm và bấm <strong>"Chấm & Nhập vào Hồ sơ"</strong> để điểm tự động lưu vào bảng điểm cá nhân của học sinh tại Mục 04.
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={selectedTrackerHwId}
-                    onChange={(e) => setSelectedTrackerHwId(e.target.value)}
-                    className="p-2.5 rounded-xl border-2 border-[#1B3B48] text-xs bg-[#F7F6F2] font-bold text-[#1B3B48]"
-                  >
-                    <option value="ALL">
-                      📋 Xem tất cả bài tập đã giao ({(appData.homeworks || []).length})
-                    </option>
-                    {(appData.homeworks || []).map((hw) => (
-                      <option key={hw.id} value={hw.id}>
-                        Bài tập: {hw.title} ({hw.targetLabel || hw.classId})
-                      </option>
-                    ))}
-                  </select>
-
-                  <div className="flex gap-1 bg-[#EFECE6] p-1 rounded-xl text-xs font-bold">
-                    {[
-                      { id: "ALL", label: "Tất cả HS" },
-                      { id: "SUBMITTED", label: "✅ Đã nộp" },
-                      { id: "NOT_SUBMITTED", label: "⏳ Chưa nộp" },
-                    ].map((stTab) => (
-                      <button
-                        key={stTab.id}
-                        type="button"
-                        onClick={() => setTrackerStatusFilter(stTab.id)}
-                        className={`px-3 py-1.5 rounded-lg transition ${
-                          trackerStatusFilter === stTab.id
-                            ? "bg-[#1B3B48] text-white"
-                            : "text-[#1B3B48] hover:bg-white/60"
-                        }`}
-                      >
-                        {stTab.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {(appData.homeworks || []).length === 0 ? (
-                <div className="p-6 rounded-xl bg-[#F7F6F2] text-center text-xs text-[#5C7667]">
-                  Chưa có bài tập nào được giao. Hãy giao bài tập ở khung phía trên để theo dõi trạng thái nộp bài và chấm điểm cho học sinh.
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {(appData.homeworks || [])
-                    .filter(
-                      (hw) =>
-                        selectedTrackerHwId === "ALL" ||
-                        hw.id === selectedTrackerHwId
-                    )
-                    .map((hw) => {
-                      const deadlineInfo = getHomeworkDeadlineStatus(
-                        hw,
-                        realTimeNow
-                      );
-                      // Lấy danh sách học sinh thuộc phạm vi bài tập này
-                      const assignedStudents = (appData.students || []).filter(
-                        (st) => {
-                          if (currentUser.role === "student") {
-                            return st.id === currentUser.studentId;
-                          }
-                          if (hw.sendMode === "INDIVIDUAL") {
-                            return st.id === hw.targetStudentId;
-                          }
-                          return (
-                            hw.classId === "ALL" ||
-                            isSameClass(st.classId, hw.classId)
-                          );
-                        }
-                      );
-
-                      const hwSubs = (
-                        appData.homeworkSubmissions || []
-                      ).filter((sub) => sub.homeworkId === hw.id);
-
-                      // Bao gồm cả những học sinh đã nộp bài cho bài tập này nhưng chưa nằm trong bộ lọc lớp (để không bao giờ sót bài nộp)
-                      const extraSubmittedStudents = hwSubs
-                        .filter(
-                          (sub) =>
-                            !assignedStudents.some(
-                              (st) => st.id === sub.studentId
-                            )
-                        )
-                        .map((sub) => {
-                          const existingSt = (appData.students || []).find(
-                            (s) => s.id === sub.studentId
-                          );
-                          return (
-                            existingSt || {
-                              id: sub.studentId,
-                              name: sub.studentName || "Học sinh nộp bài",
-                              classId: sub.classId || hw.classId || "CHUNG",
-                              score: sub.gradeScore || 0,
-                            }
-                          );
-                        });
-
-                      const allTrackedStudents = [
-                        ...assignedStudents,
-                        ...extraSubmittedStudents,
-                      ];
-
-                      // Ghép danh sách học sinh + các bài nộp của bài tập này
-                      const studentRows = allTrackedStudents.map((st) => {
-                        const foundSub = hwSubs.find(
-                          (sub) => sub.studentId === st.id
-                        );
-                        const hasSubmitted =
-                          Boolean(foundSub) ||
-                          (hw.completedBy || []).includes(st.id);
-                        return {
-                          student: st,
-                          submission: foundSub || null,
-                          hasSubmitted,
-                        };
-                      });
-
-                      const filteredRows = studentRows.filter((row) => {
-                        if (trackerStatusFilter === "SUBMITTED")
-                          return row.hasSubmitted;
-                        if (trackerStatusFilter === "NOT_SUBMITTED")
-                          return !row.hasSubmitted;
-                        return true;
-                      });
-
-                      const submittedCount = studentRows.filter(
-                        (r) => r.hasSubmitted
-                      ).length;
-
-                      return (
-                        <div
-                          key={hw.id}
-                          className="p-4 rounded-2xl bg-[#F7F6F2] border border-[#E2DFD7] space-y-3"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2DFD7] pb-2.5">
-                            <div>
-                              <span className="font-extrabold text-sm text-[#1B3B48]">
-                                📌 {hw.title} — {hw.targetLabel || hw.classId}
-                              </span>
-                              <div className="text-xs text-[#5C7667] mt-0.5">
-                                Hạn nộp: <strong>{deadlineInfo.label}</strong>
-                              </div>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
-                              <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-900">
-                                ✅ Đã nộp: {submittedCount}/{studentRows.length} HS
-                              </span>
-                              <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900">
-                                ⏳ Chưa nộp:{" "}
-                                {Math.max(
-                                  0,
-                                  studentRows.length - submittedCount
-                                )}{" "}
-                                HS
-                              </span>
-                            </div>
-                          </div>
-
-                          {studentRows.length === 0 ? (
-                            <p className="text-xs text-[#5C7667] italic">
-                              Chưa có học sinh nào trong lớp này. Hãy thêm học sinh ở Mục 09 để theo dõi và chấm điểm.
-                            </p>
-                          ) : filteredRows.length === 0 ? (
-                            <p className="text-xs text-[#5C7667] italic">
-                              Không có học sinh nào khớp với bộ lọc trạng thái hiện tại.
-                            </p>
-                          ) : (
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-left text-xs border-collapse bg-white rounded-xl overflow-hidden">
-                                <thead>
-                                  <tr className="bg-[#1B3B48] text-white">
-                                    <th className="p-3 border">Học sinh & Lớp</th>
-                                    <th className="p-3 border">
-                                      Trạng thái nộp bài
-                                    </th>
-                                    <th className="p-3 border">
-                                      Bài làm & Ghi chú của HS
-                                    </th>
-                                    <th className="p-3 border">
-                                      Chấm điểm (Thang 10) & Nhận xét
-                                    </th>
-                                    {currentUser.role === "teacher" && (
-                                      <th className="p-3 border text-center">
-                                        Lưu vào Hồ sơ học tập
-                                      </th>
-                                    )}
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-[#E2DFD7]">
-                                  {filteredRows.map(
-                                    ({ student, submission, hasSubmitted }) => {
-                                      const rowKey = submission
-                                        ? submission.id
-                                        : `${hw.id}_${student.id}`;
-                                      const currentInput =
-                                        gradingInputs[rowKey] || {};
-                                      const displayScore =
-                                        currentInput.score !== undefined
-                                          ? currentInput.score
-                                          : submission?.gradeScore ?? "";
-                                      const displayFeedback =
-                                        currentInput.feedback !== undefined
-                                          ? currentInput.feedback
-                                          : submission?.teacherFeedback ?? "";
-
-                                      return (
-                                        <tr
-                                          key={student.id}
-                                          className="hover:bg-[#F7F6F2]/60"
-                                        >
-                                          <td className="p-3 border font-bold text-[#1B3B48]">
-                                            <div>{student.name}</div>
-                                            <div className="text-[11px] text-[#5C7667] font-normal">
-                                              Lớp {student.classId} • ĐTB hiện tại:{" "}
-                                              <strong>
-                                                {student.score}/10
-                                              </strong>
-                                            </div>
-                                          </td>
-
-                                          <td className="p-3 border">
-                                            {hasSubmitted ? (
-                                              <div className="space-y-1">
-                                                <span className="inline-block px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 font-extrabold text-[11px]">
-                                                  ✅ Đã nộp bài
-                                                </span>
-                                                {submission?.submittedAt && (
-                                                  <div className="text-[10px] text-[#5C7667]">
-                                                    Lúc: {submission.submittedAt}
-                                                  </div>
-                                                )}
-                                              </div>
-                                            ) : (
-                                              <span
-                                                className={`inline-block px-2.5 py-0.5 rounded-full font-extrabold text-[11px] ${
-                                                  deadlineInfo.isExpired
-                                                    ? "bg-red-100 text-red-800"
-                                                    : "bg-amber-100 text-amber-900"
-                                                }`}
-                                              >
-                                                {deadlineInfo.isExpired
-                                                  ? "❌ Quá hạn chưa nộp"
-                                                  : "⏳ Chưa nộp bài"}
-                                              </span>
-                                            )}
-                                          </td>
-
-                                          <td className="p-3 border">
-                                            {submission ? (
-                                              <div className="space-y-1">
-                                                {submission.studentNote && (
-                                                  <p className="text-[#1B3B48]">
-                                                    "{submission.studentNote}"
-                                                  </p>
-                                                )}
-                                                {submission.fileDataUrl && (
-                                                  <div className="flex flex-wrap gap-1.5">
-                                                    {submission.fileType ===
-                                                      "image" && (
-                                                      <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                          setPreviewSubmissionModal(
-                                                            submission
-                                                          )
-                                                        }
-                                                        className="px-2.5 py-1 rounded bg-[#1B3B48] text-[#E9C46A] text-[11px] font-bold"
-                                                      >
-                                                        👁 Xem ảnh
-                                                      </button>
-                                                    )}
-                                                    <a
-                                                      href={
-                                                        submission.fileDataUrl
-                                                      }
-                                                      download={
-                                                        submission.fileName ||
-                                                        "bailam_hs"
-                                                      }
-                                                      className="inline-block px-2.5 py-1 rounded bg-[#5C7667] text-white text-[11px] font-bold"
-                                                    >
-                                                      ⬇ Tải bài nộp (
-                                                      {submission.fileName ||
-                                                        "Tệp"}
-                                                      )
-                                                    </a>
-                                                  </div>
-                                                )}
-                                              </div>
-                                            ) : (
-                                              <span className="text-[#5C7667] italic">
-                                                Chưa có tệp bài nộp
-                                              </span>
-                                            )}
-                                          </td>
-
-                                          <td className="p-3 border">
-                                            {currentUser.role === "teacher" ? (
-                                              <div className="flex flex-col sm:flex-row gap-2">
-                                                <input
-                                                  type="number"
-                                                  step="0.1"
-                                                  min="0"
-                                                  max="10"
-                                                  value={displayScore}
-                                                  onChange={(e) =>
-                                                    setGradingInputs({
-                                                      ...gradingInputs,
-                                                      [rowKey]: {
-                                                        ...currentInput,
-                                                        score: e.target.value,
-                                                        feedback:
-                                                          displayFeedback,
-                                                      },
-                                                    })
-                                                  }
-                                                  placeholder="Điểm (0-10)"
-                                                  className="w-24 p-2 rounded-lg border font-black text-[#1B3B48] bg-[#F7F6F2]"
-                                                />
-                                                <input
-                                                  type="text"
-                                                  value={displayFeedback}
-                                                  onChange={(e) =>
-                                                    setGradingInputs({
-                                                      ...gradingInputs,
-                                                      [rowKey]: {
-                                                        ...currentInput,
-                                                        score: displayScore,
-                                                        feedback:
-                                                          e.target.value,
-                                                      },
-                                                    })
-                                                  }
-                                                  placeholder="Nhận xét bài làm..."
-                                                  className="flex-1 p-2 rounded-lg border bg-[#F7F6F2]"
-                                                />
-                                              </div>
-                                            ) : (
-                                              <div>
-                                                {submission?.gradeScore !==
-                                                  undefined &&
-                                                submission?.gradeScore !== "" ? (
-                                                  <div>
-                                                    <span className="font-black text-sm text-[#2C4A3E]">
-                                                      Điểm:{" "}
-                                                      {submission.gradeScore}/10
-                                                    </span>
-                                                    {submission.teacherFeedback && (
-                                                      <p className="text-[#5C7667] mt-0.5">
-                                                        Nhận xét:{" "}
-                                                        {
-                                                          submission.teacherFeedback
-                                                        }
-                                                      </p>
-                                                    )}
-                                                  </div>
-                                                ) : (
-                                                  <span className="text-[#5C7667] italic">
-                                                    Đang chờ Thầy chấm điểm
-                                                  </span>
-                                                )}
-                                              </div>
-                                            )}
-                                          </td>
-
-                                          {currentUser.role === "teacher" && (
-                                            <td className="p-3 border text-center">
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  handleGradeHomeworkAndSyncProfile(
-                                                    hw,
-                                                    student,
-                                                    submission
-                                                  )
-                                                }
-                                                className="px-3 py-1.5 rounded-xl bg-[#1B3B48] hover:bg-[#2C4A3E] text-[#E9C46A] text-xs font-bold transition shadow-sm"
-                                              >
-                                                {submission?.isSyncedToProfile
-                                                  ? "✓ Cập nhật lại Điểm Hồ sơ"
-                                                  : "💯 Chấm & Nhập vào Hồ sơ"}
-                                              </button>
-                                              {submission?.isSyncedToProfile && (
-                                                <div className="text-[10px] font-bold text-emerald-700 mt-1">
-                                                  ✓ Đã lưu vào Hồ sơ Mục 04
-                                                </div>
-                                              )}
-                                            </td>
-                                          )}
-                                        </tr>
-                                      );
-                                    }
-                                  )}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ===================================================================
-            MỤC 06: NGÂN HÀNG ĐỀ THI (CHIA THEO NĂM HỌC & HÌNH THỨC GKI, HKI, THPT... + TẢI TỆP HOẶC LINK)
-        =================================================================== */}
-        {activeView === "exams" && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-[#E2DFD7] flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <span className="text-xs font-bold uppercase text-[#5C7667]">
-                  Mục 06 • Ngân hàng Đề thi theo Năm học & Hình thức kỳ thi
-                </span>
-                <h2 className="text-2xl font-bold text-[#1B3B48]">
-                  Kho Đề thi (GKI • HKI • GKII • HKII • THPT Quốc gia) — Tải Tệp hoặc Gắn Link
-                </h2>
-                <p className="text-xs text-[#5C7667] mt-1">
-                  Phân loại rõ theo từng <strong>Năm học</strong> và từng <strong>Hình thức thi</strong> (GKI Lớp 10, HKI Lớp 10, ..., THPT Quốc gia). Hỗ trợ tải tệp đề thi trực tiếp từ máy hoặc gắn đường link.
-                </p>
-              </div>
-              <button
-                onClick={goBack}
-                className="px-4 py-2 rounded-xl bg-[#EFECE6] text-[#1B3B48] text-xs font-bold hover:bg-[#E2DFD7]"
-              >
-                ← Quay lại trang trước
-              </button>
-            </div>
-
-            {currentUser.role === "teacher" && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!examForm.title.trim()) return;
-                  const chosenYear =
-                    examForm.academicYear ||
-                    (selectedAcademicYear === "ALL"
-                      ? appData.currentAcademicYear || "2026 - 2027"
-                      : selectedAcademicYear);
-                  const catMeta = getExamCategoryMeta(examForm.examCategory);
-
-                  const newEx = {
-                    id: "EX" + Date.now(),
-                    ...examForm,
-                    academicYear: chosenYear,
-                    examCategoryLabel: catMeta.short,
-                    date: new Date().toLocaleDateString("vi-VN"),
-                  };
-                  saveToAll({
-                    ...appData,
-                    examPapers: [newEx, ...appData.examPapers],
-                  });
-                  setExamForm({
-                    ...examForm,
-                    title: "",
-                    fileUrl: "",
-                    appLink: "",
-                    fileName: "",
-                    fileType: "",
-                    fileDataUrl: "",
-                  });
-                  notify(
-                    `Đã đăng đề thi "${newEx.title}" (${catMeta.short} • Năm học ${chosenYear})!`,
-                    "success"
-                  );
-                }}
-                className="bg-white p-6 rounded-2xl border-2 border-[#1B3B48] space-y-4 shadow-sm"
-              >
-                <div className="border-b pb-3 flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="font-bold text-base text-[#1B3B48]">
-                    ➕ Đăng Đề thi mới (Chọn Năm học, Hình thức thi & Tải Tệp hoặc Link)
-                  </h3>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold mb-1 text-[#5C7667]">
-                      1. Năm học:
-                    </label>
-                    <select
-                      value={examForm.academicYear}
-                      onChange={(e) =>
-                        setExamForm({
-                          ...examForm,
-                          academicYear: e.target.value,
-                        })
-                      }
-                      className="w-full p-2.5 rounded-xl border text-xs bg-white font-bold text-[#1B3B48]"
-                    >
-                      {(appData.academicYears || DEFAULT_ACADEMIC_YEARS).map(
-                        (y) => (
-                          <option key={y} value={y}>
-                            Năm học {y}
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-[11px] font-bold mb-1 text-[#5C7667]">
-                      2. Hình thức / Kỳ thi (GKI, HKI, GKII, HKII, THPT...):
-                    </label>
-                    <select
-                      value={examForm.examCategory}
-                      onChange={(e) =>
-                        setExamForm({
-                          ...examForm,
-                          examCategory: e.target.value,
-                        })
-                      }
-                      className="w-full p-2.5 rounded-xl border-2 border-[#1B3B48] text-xs bg-[#F7F6F2] font-extrabold text-[#1B3B48]"
-                    >
-                      {EXAM_CATEGORIES.map((cat) => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold mb-1 text-[#5C7667]">
-                      3. Áp dụng cho Lớp:
-                    </label>
-                    <select
-                      value={examForm.classId}
-                      onChange={(e) =>
-                        setExamForm({ ...examForm, classId: e.target.value })
-                      }
-                      className="w-full p-2.5 rounded-xl border text-xs bg-white font-bold"
-                    >
-                      <option value="ALL">Tất cả các lớp</option>
-                      {appData.classes.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          Lớp {c.id}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <input
-                    type="text"
-                    required
-                    value={examForm.title}
-                    onChange={(e) =>
-                      setExamForm({ ...examForm, title: e.target.value })
-                    }
-                    placeholder="Tên đề thi (VD: Đề thi thử HKI Hóa 10 - Đề số 01)..."
-                    className="md:col-span-3 p-2.5 rounded-xl border text-xs"
-                  />
-                  <input
-                    type="text"
-                    value={examForm.duration}
-                    onChange={(e) =>
-                      setExamForm({ ...examForm, duration: e.target.value })
-                    }
-                    placeholder="Thời gian (VD: 50 phút)"
-                    className="p-2.5 rounded-xl border text-xs"
-                  />
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
-                  <div>
-                    <label className="block text-xs font-bold mb-1 text-[#1B3B48]">
-                      📎 Cách 1: Tải Tệp Đề thi từ máy (PDF/Word/Ảnh):
-                    </label>
-                    <input
-                      type="file"
-                      onChange={(e) =>
-                        handleFlexibleFileUpload(e, (res) =>
-                          setExamForm((prev) => ({
-                            ...prev,
-                            title: prev.title || res.fileName,
-                            fileName: res.fileName,
-                            fileType: res.fileType,
-                            fileDataUrl: res.dataUrl,
-                          }))
-                        )
-                      }
-                      className="text-xs w-full"
-                    />
-                    {examForm.fileName && (
-                      <div className="text-[11px] text-emerald-700 font-bold mt-1">
-                        ✓ Đã chọn tệp: {examForm.fileName}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold mb-1 text-[#1B3B48]">
-                      🔗 Cách 2: Dán Link File Đề thi (Drive/OneDrive):
-                    </label>
-                    <input
-                      type="text"
-                      value={examForm.fileUrl || ""}
-                      onChange={(e) =>
-                        setExamForm({ ...examForm, fileUrl: e.target.value })
-                      }
-                      placeholder="https://drive.google.com/..."
-                      className="w-full p-2 rounded-lg border text-xs bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold mb-1 text-[#1B3B48]">
-                      🖥 Cách 3: Link App Thi thử trực tuyến (Nếu có):
-                    </label>
-                    <input
-                      type="text"
-                      value={examForm.appLink}
-                      onChange={(e) =>
-                        setExamForm({ ...examForm, appLink: e.target.value })
-                      }
-                      placeholder="https://azota.vn/... hoặc Google Form"
-                      className="w-full p-2 rounded-lg border text-xs bg-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    className="bg-[#1B3B48] text-white px-5 py-2.5 rounded-xl text-xs font-bold"
-                  >
-                    Đăng Đề thi
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* THANH LỌC ĐỀ THI THEO NĂM HỌC & HÌNH THỨC THI (GKI LỚP 10, HKI LỚP 10, ..., THPT) */}
-            <div className="bg-white p-5 rounded-2xl border border-[#E2DFD7] space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-[#1B3B48]">
-                    📅 Lọc theo Năm học:
-                  </span>
-                  <select
-                    value={examFilterYear}
-                    onChange={(e) => setExamFilterYear(e.target.value)}
-                    className="p-2 rounded-xl border text-xs bg-[#F7F6F2] font-bold text-[#1B3B48]"
-                  >
-                    <option value="ALL">Tất cả các Năm học</option>
-                    {(appData.academicYears || DEFAULT_ACADEMIC_YEARS).map(
-                      (y) => (
-                        <option key={y} value={y}>
-                          Năm học {y}
-                        </option>
-                      )
-                    )}
-                  </select>
-                </div>
-
-                <span className="text-xs text-[#5C7667] font-semibold">
-                  Chọn hình thức kỳ thi bên dưới để lọc nhanh:
-                </span>
-              </div>
-
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setExamFilterCategory("ALL")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                    examFilterCategory === "ALL"
-                      ? "bg-[#1B3B48] text-[#E9C46A]"
-                      : "bg-[#EFECE6] text-[#1B3B48] hover:bg-[#E2DFD7]"
-                  }`}
-                >
-                  Tất cả hình thức ({appData.examPapers.length})
-                </button>
-                {EXAM_CATEGORIES.map((cat) => {
-                  const cnt = appData.examPapers.filter(
-                    (e) => (e.examCategory || "THPT_QG") === cat.id
-                  ).length;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => setExamFilterCategory(cat.id)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                        examFilterCategory === cat.id
-                          ? "bg-[#1B3B48] text-[#E9C46A]"
-                          : "bg-[#EFECE6] text-[#1B3B48] hover:bg-[#E2DFD7]"
-                      }`}
-                    >
-                      {cat.short} {cnt > 0 ? `(${cnt})` : ""}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* DANH SÁCH ĐỀ THI ĐÃ ĐĂNG */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {appData.examPapers
-                .filter((ex) => {
-                  if (
-                    examFilterYear !== "ALL" &&
-                    ex.academicYear &&
-                    ex.academicYear !== examFilterYear
-                  ) {
-                    return false;
-                  }
-                  if (
-                    examFilterCategory !== "ALL" &&
-                    (ex.examCategory || "THPT_QG") !== examFilterCategory
-                  ) {
-                    return false;
-                  }
-                  return true;
-                })
-                .map((ex) => {
-                  const catMeta = getExamCategoryMeta(ex.examCategory);
-                  return (
-                    <div
-                      key={ex.id}
-                      className="bg-white p-5 rounded-2xl border border-[#E2DFD7] flex flex-col justify-between gap-3 shadow-sm"
-                    >
-                      <div className="space-y-1.5">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="px-2.5 py-0.5 rounded-full bg-[#1B3B48] text-[#E9C46A] text-xs font-extrabold">
-                              {catMeta.short}
-                            </span>
-                            <span className="px-2 py-0.5 rounded bg-[#EFECE6] text-[#2C4A3E] text-xs font-bold">
-                              📅 NH: {ex.academicYear || "2026 - 2027"}
-                            </span>
-                            <span className="text-xs font-bold text-[#5C7667]">
-                              •{" "}
-                              {ex.classId === "ALL"
-                                ? "Mọi lớp"
-                                : `Lớp ${ex.classId}`}
-                            </span>
-                          </div>
-
-                          {currentUser.role === "teacher" && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                saveToAll({
-                                  ...appData,
-                                  examPapers: appData.examPapers.filter(
-                                    (x) => x.id !== ex.id
-                                  ),
-                                })
-                              }
-                              className="text-xs text-red-600 font-bold hover:underline"
-                            >
-                              🗑 Xóa đề
-                            </button>
-                          )}
-                        </div>
-
-                        <h4 className="font-bold text-base text-[#1B3B48]">
-                          📝 {ex.title}
-                        </h4>
-                        <div className="text-xs text-[#5C7667]">
-                          ⏱ Thời gian làm bài: {ex.duration || "50 phút"} • Ngày đăng: {ex.date}
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#EFECE6]">
-                        {ex.fileDataUrl && (
-                          <a
-                            href={ex.fileDataUrl}
-                            download={ex.fileName || "dethi"}
-                            className="bg-[#5C7667] hover:bg-[#4A6154] text-white px-3.5 py-1.5 rounded-xl text-xs font-bold"
-                          >
-                            📥 Tải Tệp Đề Thi ({ex.fileName || "Tệp đính kèm"})
-                          </a>
-                        )}
-                        {ex.fileUrl && (
-                          <a
-                            href={ex.fileUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="bg-[#2C4A3E] hover:bg-[#1B3B48] text-white px-3.5 py-1.5 rounded-xl text-xs font-bold"
-                          >
-                            🔗 Mở Link Tệp Đề Thi
-                          </a>
-                        )}
-                        {ex.appLink && (
-                          <a
-                            href={ex.appLink}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="bg-[#1B3B48] text-[#E9C46A] px-3.5 py-1.5 rounded-xl text-xs font-bold"
-                          >
-                            🖥 Mở App Thi Thử →
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-        )}
-
-        {/* ===================================================================
-            MỤC 07: BẢNG VÀNG VINH DANH & THÀNH TÍCH CÁ NHÂN (ĐỒNG BỘ RA NGOÀI MÀN HÌNH ĐĂNG NHẬP)
-        =================================================================== */}
-        {activeView === "honor" && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-[#E2DFD7] flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <span className="text-xs font-bold uppercase text-[#5C7667]">
-                  Mục 07 • Tự hào Lớp Hóa Thầy Dương Anh Tuấn Anh (Hiển thị cả ngoài màn hình đăng nhập)
-                </span>
-                <h2 className="text-2xl font-bold text-[#1B3B48]">
-                  Bảng Vàng Vinh Danh, Giải Học sinh giỏi & Đậu Đại học
-                </h2>
-              </div>
-              <button
-                onClick={goBack}
-                className="px-4 py-2 rounded-xl bg-[#EFECE6] text-[#1B3B48] text-xs font-bold hover:bg-[#E2DFD7]"
-              >
-                ← Quay lại trang trước
-              </button>
-            </div>
-
-            {currentUser.role === "teacher" && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!achForm.studentName.trim() || !achForm.title.trim())
-                    return;
-                  saveToAll({
-                    ...appData,
-                    achievements: [
-                      { id: "ACH" + Date.now(), ...achForm },
-                      ...appData.achievements,
-                    ],
-                  });
-                  setAchForm({
-                    studentName: "",
-                    classId: "12A1",
-                    academicYear:
-                      selectedAcademicYear === "ALL"
-                        ? appData.currentAcademicYear || "2026 - 2027"
-                        : selectedAcademicYear,
-                    category: "Đậu Đại học",
-                    title: "",
-                    scoreDetail: "",
-                    imageName: "",
-                    imageDataUrl: "",
-                  });
-                  notify("Đã đăng thành tích mới lên Bảng Vàng!", "success");
-                }}
-                className="bg-white p-6 rounded-2xl border-2 border-[#1B3B48] space-y-4"
-              >
-                <h3 className="font-bold text-base text-[#1B3B48]">
-                  + Thêm Hồ sơ Vinh danh Thành tích (Đồng bộ ra Bảng Vàng ngoài màn hình Đăng nhập)
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
-                  <input
-                    type="text"
-                    required
-                    value={achForm.studentName}
-                    onChange={(e) =>
-                      setAchForm({ ...achForm, studentName: e.target.value })
-                    }
-                    placeholder="Họ và tên học sinh..."
-                    className="p-2.5 rounded-xl border text-xs"
-                  />
-                  <input
-                    type="text"
-                    value={achForm.classId}
-                    onChange={(e) =>
-                      setAchForm({ ...achForm, classId: e.target.value })
-                    }
-                    placeholder="Lớp / Khóa"
-                    className="p-2.5 rounded-xl border text-xs"
-                  />
-                  <select
-                    value={achForm.academicYear}
-                    onChange={(e) =>
-                      setAchForm({ ...achForm, academicYear: e.target.value })
-                    }
-                    className="p-2.5 rounded-xl border text-xs bg-white font-bold"
-                  >
-                    {(appData.academicYears || DEFAULT_ACADEMIC_YEARS).map(
-                      (y) => (
-                        <option key={y} value={y}>
-                          Năm học {y}
-                        </option>
-                      )
-                    )}
-                  </select>
-                  <select
-                    value={achForm.category}
-                    onChange={(e) =>
-                      setAchForm({ ...achForm, category: e.target.value })
-                    }
-                    className="p-2.5 rounded-xl border text-xs bg-white font-bold"
-                  >
-                    <option value="Đậu Đại học">🎓 Đậu Đại học</option>
-                    <option value="Học sinh giỏi">🏅 Giải Học sinh giỏi</option>
-                    <option value="Thủ khoa / Xuất sắc">
-                      🏆 Thủ khoa / Điểm 10 Hóa
-                    </option>
-                  </select>
-                  <input
-                    type="text"
-                    required
-                    value={achForm.title}
-                    onChange={(e) =>
-                      setAchForm({ ...achForm, title: e.target.value })
-                    }
-                    placeholder="Trường Đại học đậu / Giải thưởng..."
-                    className="p-2.5 rounded-xl border text-xs"
-                  />
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <input
-                    type="text"
-                    value={achForm.scoreDetail}
-                    onChange={(e) =>
-                      setAchForm({ ...achForm, scoreDetail: e.target.value })
-                    }
-                    placeholder="Chi tiết điểm số (VD: Điểm Hóa 9.75 • Tổng điểm 28.5)..."
-                    className="flex-1 p-2.5 rounded-xl border text-xs"
-                  />
-                  <button
-                    type="submit"
-                    className="bg-[#1B3B48] text-white px-5 py-2.5 rounded-xl text-xs font-bold"
-                  >
-                    Đăng lên Bảng Vàng
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {combinedHonorBoard.filter((ach) =>
-              matchesSelectedYear(ach.academicYear)
-            ).length === 0 && (
-              <div className="bg-white p-8 rounded-2xl border border-dashed border-[#DFDBD0] text-center space-y-1.5">
-                <div className="text-sm font-bold text-[#1B3B48]">
-                  🏆 Danh sách Bảng Vàng đang trống
-                </div>
-                <p className="text-xs text-[#5C7667]">
-                  Các học sinh vinh danh mẫu đã được xóa. Hãy điền thông tin vào khung phía trên để tạo vinh danh mới.
-                </p>
-              </div>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {combinedHonorBoard
-                .filter((ach) => matchesSelectedYear(ach.academicYear))
-                .map((ach) => (
-                  <div
-                    key={ach.id}
-                    className="bg-white p-5 rounded-2xl border border-[#E2DFD7] space-y-2 flex flex-col justify-between"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="px-2.5 py-0.5 rounded-full bg-[#1B3B48] text-[#E9C46A] text-xs font-bold">
-                          {ach.category} • {ach.classId}
-                        </span>
-                        <span className="text-[11px] font-bold text-[#5C7667]">
-                          {ach.academicYear || "2026 - 2027"}
-                        </span>
-                      </div>
-                      <h4 className="font-extrabold text-base text-[#1B3B48]">
-                        {ach.studentName}
-                      </h4>
-                      <p className="text-sm font-bold text-[#2C4A3E]">
-                        {ach.title}
-                      </p>
-                      {ach.scoreDetail && (
-                        <p className="text-xs text-[#5C7667]">
-                          {ach.scoreDetail}
-                        </p>
-                      )}
-                    </div>
-                    {currentUser.role === "teacher" && !ach.isAutoTop && (
-                      <div className="pt-2 border-t flex justify-end">
-                        <button
-                          onClick={() =>
-                            saveToAll({
-                              ...appData,
-                              achievements: appData.achievements.filter(
-                                (x) => x.id !== ach.id
-                              ),
-                            })
-                          }
-                          className="text-xs text-red-600 font-bold hover:underline"
-                        >
-                          Xóa vinh danh
-                        </button>
-                      </div>
-                    )}
                   </div>
                 ))}
             </div>
           </div>
         )}
 
-        {/* ===================================================================
-            MỤC 08: SỔ TAY CÁC CHẤT CẦN NHỚ, DỤNG CỤ THÍ NGHIỆM & TẠO FLASHCARD CÁ NHÂN
-        =================================================================== */}
-        {activeView === "chem_tools" && (
+        {/* ============================================================ */}
+        {/* MỤC 05B: GIAO BÀI TẬP, NỘP BÀI & CHẤM ĐIỂM (ĐÃ TÁCH RIÊNG)  */}
+        {/* ============================================================ */}
+        {activeView === "homeworks" && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-[#E2DFD7] flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E5E0D8] pb-4">
               <div>
-                <span className="text-xs font-bold uppercase text-[#5C7667]">
-                  Mục 08 • Sổ tay Hóa học Toàn diện & Tiện ích Cá nhân
+                <span className="text-xs font-mono uppercase tracking-widest text-[#9C6644] block mb-1">
+                  MỤC 05B // HOMEWORK ASSIGNMENT, SUBMISSION & GRADING (TÁCH RIÊNG)
                 </span>
-                <h2 className="text-2xl font-bold text-[#1B3B48]">
-                  Sổ tay Các Chất Cần Nhớ, Dụng cụ Thí nghiệm, Tạo Flashcard Cá nhân & Đấu trường Hóa học
+                <h2 className="text-2xl font-serif font-bold text-[#1B3B48]">
+                  Giao Bài Tập, Cổng Nộp Bài Học Sinh & Chấm Điểm Đồng Bộ Hồ Sơ
                 </h2>
               </div>
-              <button
-                onClick={goBack}
-                className="px-4 py-2 rounded-xl bg-[#EFECE6] text-[#1B3B48] text-xs font-bold hover:bg-[#E2DFD7]"
-              >
-                ← Quay lại trang trước
-              </button>
-            </div>
-
-            <div className="bg-white p-6 rounded-2xl border border-[#E2DFD7] space-y-5 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EFECE6] pb-3">
-                <h3 className="font-bold text-lg text-[#1B3B48]">
-                  📖 Bảng Các Chất Cần Nhớ, Chất Chỉ Thị pH & Dụng Cụ Thí Nghiệm (Chuẩn IUPAC)
-                </h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { id: "FATTY_ACIDS", label: "1. Acid béo & Chất béo" },
-                    { id: "AMINO_ACIDS", label: "2. Amino acid cần nhớ" },
-                    { id: "PH_INDICATORS", label: "3. Thang pH & Chất chỉ thị" },
-                    {
-                      id: "LAB_EQUIPMENT",
-                      label: "4. Dụng cụ thí nghiệm & Công dụng",
-                    },
-                    { id: "PRECIPITATES", label: "5. Màu kết tủa & Phức chất" },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setRefTab(tab.id)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                        refTab === tab.id
-                          ? "bg-[#1B3B48] text-white shadow-sm"
-                          : "bg-[#EFECE6] text-[#1B3B48] hover:bg-[#E2DFD7]"
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {refTab === "FATTY_ACIDS" && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="bg-[#1B3B48] text-white">
-                        <th className="p-3 border">Tên thường (IUPAC)</th>
-                        <th className="p-3 border">Tên thay thế IUPAC</th>
-                        <th className="p-3 border">Công thức cấu tạo</th>
-                        <th className="p-3 border">Phân tử khối (M)</th>
-                        <th className="p-3 border">Triglyceride tương ứng</th>
-                        <th className="p-3 border">Đặc điểm & Trạng thái</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#E2DFD7]">
-                      {FATTY_ACIDS_TABLE.map((fa, i) => (
-                        <tr key={i} className="hover:bg-[#F7F6F2]">
-                          <td className="p-3 border font-bold text-[#1B3B48]">
-                            {fa.name}
-                          </td>
-                          <td className="p-3 border text-[#5C7667] font-semibold">
-                            {fa.iupac}
-                          </td>
-                          <td className="p-3 border font-mono font-bold">
-                            {fa.formula}
-                          </td>
-                          <td className="p-3 border font-bold text-[#2C4A3E]">
-                            {fa.molarMass}
-                          </td>
-                          <td className="p-3 border font-semibold">
-                            {fa.triglyceride}
-                          </td>
-                          <td className="p-3 border">{fa.property}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {refTab === "AMINO_ACIDS" && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="bg-[#1B3B48] text-white">
-                        <th className="p-3 border">Kí hiệu</th>
-                        <th className="p-3 border">Tên thường</th>
-                        <th className="p-3 border">Tên thay thế IUPAC</th>
-                        <th className="p-3 border">Công thức cấu tạo</th>
-                        <th className="p-3 border">M (g/mol)</th>
-                        <th className="p-3 border">Số nhóm chức</th>
-                        <th className="p-3 border">Đổi màu Quỳ tím & pH</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#E2DFD7]">
-                      {AMINO_ACIDS_TABLE.map((aa, i) => (
-                        <tr key={i} className="hover:bg-[#F7F6F2]">
-                          <td className="p-3 border font-black text-[#1B3B48]">
-                            {aa.symbol}
-                          </td>
-                          <td className="p-3 border font-bold">
-                            {aa.commonName}
-                          </td>
-                          <td className="p-3 border text-[#5C7667]">
-                            {aa.iupacName}
-                          </td>
-                          <td className="p-3 border font-mono font-bold">
-                            {aa.formula}
-                          </td>
-                          <td className="p-3 border font-black text-sm text-[#2C4A3E]">
-                            {aa.molarMass}
-                          </td>
-                          <td className="p-3 border">{aa.groups}</td>
-                          <td className="p-3 border font-semibold">
-                            {aa.litmus}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {refTab === "PH_INDICATORS" && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="bg-[#1B3B48] text-white">
-                        <th className="p-3 border">Chất chỉ thị</th>
-                        <th className="p-3 border">Môi trường Acid</th>
-                        <th className="p-3 border">Môi trường Trung tính</th>
-                        <th className="p-3 border">Môi trường Base (Kiềm)</th>
-                        <th className="p-3 border">Ứng dụng trọng tâm</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#E2DFD7]">
-                      {PH_INDICATORS_TABLE.map((ind, i) => (
-                        <tr key={i} className="hover:bg-[#F7F6F2]">
-                          <td className="p-3 border font-bold text-[#1B3B48]">
-                            {ind.indicator}
-                          </td>
-                          <td className="p-3 border font-semibold text-red-700">
-                            {ind.acidColor}
-                          </td>
-                          <td className="p-3 border font-semibold">
-                            {ind.neutralColor}
-                          </td>
-                          <td className="p-3 border font-semibold text-blue-800">
-                            {ind.baseColor}
-                          </td>
-                          <td className="p-3 border text-[#5C7667]">
-                            {ind.application}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {refTab === "LAB_EQUIPMENT" && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {LAB_EQUIPMENT_TABLE.map((eq, i) => (
-                    <div
-                      key={i}
-                      className="p-4 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] space-y-1.5 text-xs"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-extrabold text-sm text-[#1B3B48]">
-                          🔬 {eq.name}
-                        </span>
-                        <span className="px-2 py-0.5 rounded bg-[#1B3B48] text-white text-[10px] font-bold">
-                          {eq.category}
-                        </span>
-                      </div>
-                      <p className="text-[#1B3B48] leading-relaxed">
-                        <strong>Công dụng:</strong> {eq.usage}
-                      </p>
-                      <p className="text-[#9C6644] font-semibold">
-                        ⚠️ Lưu ý thao tác chuẩn: {eq.note}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {refTab === "PRECIPITATES" && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {CHEM_REFERENCE_NOTES.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3.5 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] space-y-1 text-xs"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-black text-sm text-[#1B3B48]">
-                          {item.formula}
-                        </span>
-                        <span className="px-2 py-0.5 rounded bg-[#1B3B48] text-white font-bold text-[10px]">
-                          {item.color}
-                        </span>
-                      </div>
-                      <p className="text-[#5C7667] leading-relaxed">
-                        {item.note}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* TẠO FLASHCARD CÁ NHÂN CHO HỌC SINH */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <form
-                onSubmit={handleCreatePersonalFlashcard}
-                className="lg:col-span-5 bg-white p-6 rounded-2xl border-2 border-[#5C7667] space-y-3.5 shadow-sm"
-              >
-                <h3 className="font-bold text-base text-[#1B3B48]">
-                  ✨ Tạo Flashcard Cá Nhân Của Bạn
-                </h3>
-                <div className="grid grid-cols-2 gap-2.5 text-xs">
-                  <select
-                    value={newFlashcardForm.grade}
-                    onChange={(e) =>
-                      setNewFlashcardForm({
-                        ...newFlashcardForm,
-                        grade: e.target.value,
-                      })
-                    }
-                    className="p-2.5 rounded-xl border bg-white font-semibold"
-                  >
-                    <option value="10">Hóa học Lớp 10</option>
-                    <option value="11">Hóa học Lớp 11</option>
-                    <option value="12">Hóa học Lớp 12</option>
-                  </select>
-                  <input
-                    type="text"
-                    value={newFlashcardForm.topic}
-                    onChange={(e) =>
-                      setNewFlashcardForm({
-                        ...newFlashcardForm,
-                        topic: e.target.value,
-                      })
-                    }
-                    placeholder="Chủ đề (VD: Amino acid)"
-                    className="p-2.5 rounded-xl border"
-                  />
-                </div>
-                <input
-                  type="text"
-                  required
-                  value={newFlashcardForm.front}
-                  onChange={(e) =>
-                    setNewFlashcardForm({
-                      ...newFlashcardForm,
-                      front: e.target.value,
-                    })
-                  }
-                  placeholder="Mặt trước: Câu hỏi / Tên chất..."
-                  className="w-full p-2.5 rounded-xl border text-xs"
-                />
-                <textarea
-                  rows={2}
-                  required
-                  value={newFlashcardForm.back}
-                  onChange={(e) =>
-                    setNewFlashcardForm({
-                      ...newFlashcardForm,
-                      back: e.target.value,
-                    })
-                  }
-                  placeholder="Mặt sau: Đáp án / Công thức..."
-                  className="w-full p-2.5 rounded-xl border text-xs"
-                />
+              <div className="flex flex-wrap items-center gap-2">
                 <button
-                  type="submit"
-                  className="w-full bg-[#2C4A3E] text-white py-2.5 rounded-xl text-xs font-bold"
+                  onClick={() => setActiveView("documents")}
+                  className="px-4 py-2 rounded-xl bg-[#2C4A3E] text-white text-xs font-bold hover:bg-[#1B3B48] shadow-sm"
                 >
-                  + Lưu vào Bộ Flashcard Cá nhân
+                  📂 Chuyển sang Mục 05A: Kho Tài Liệu Lớp/Chương →
                 </button>
-              </form>
-
-              <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-[#E2DFD7] space-y-4 flex flex-col justify-between">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="font-bold text-base text-[#1B3B48]">
-                    🗂 Lật Thẻ Ôn Tập Flashcard
-                  </h3>
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => {
-                        setFlashcardSource("ALL");
-                        setCardIndex(0);
-                        setIsCardFlipped(false);
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                        flashcardSource === "ALL"
-                          ? "bg-[#1B3B48] text-white"
-                          : "bg-[#EFECE6] text-[#1B3B48]"
-                      }`}
-                    >
-                      Tất cả thẻ
-                    </button>
-                    <button
-                      onClick={() => {
-                        setFlashcardSource("PERSONAL");
-                        setCardIndex(0);
-                        setIsCardFlipped(false);
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                        flashcardSource === "PERSONAL"
-                          ? "bg-[#2C4A3E] text-white"
-                          : "bg-[#EFECE6] text-[#1B3B48]"
-                      }`}
-                    >
-                      Thẻ Cá nhân ({(appData.customFlashcards || []).length})
-                    </button>
-                  </div>
-                </div>
-
-                {(() => {
-                  const personalList = appData.customFlashcards || [];
-                  const combined =
-                    flashcardSource === "PERSONAL"
-                      ? personalList
-                      : [...personalList, ...FLASHCARDS_BANK];
-                  if (combined.length === 0) {
-                    return (
-                      <div className="p-8 rounded-2xl bg-[#F7F6F2] text-center text-xs text-[#5C7667]">
-                        Chưa có thẻ Flashcard cá nhân nào.
-                      </div>
-                    );
-                  }
-                  const cur = combined[cardIndex % combined.length];
-                  return (
-                    <div className="space-y-3">
-                      <div
-                        onClick={() => setIsCardFlipped(!isCardFlipped)}
-                        className="min-h-[160px] p-6 rounded-2xl bg-[#1B3B48] text-white flex flex-col items-center justify-center text-center cursor-pointer"
-                      >
-                        <span className="text-[11px] uppercase text-[#E9C46A] mb-2">
-                          {isCardFlipped
-                            ? "ĐÁP ÁN (Bấm để lật lại)"
-                            : "CÂU HỎI (Bấm vào thẻ để xem đáp án)"}
-                        </span>
-                        <p className="text-base font-bold">
-                          {isCardFlipped ? cur.back : cur.front}
-                        </p>
-                      </div>
-                      <div className="flex justify-end">
-                        <button
-                          onClick={() => {
-                            setIsCardFlipped(false);
-                            setCardIndex((prev) => prev + 1);
-                          }}
-                          className="text-xs font-bold text-white bg-[#1B3B48] px-4 py-2 rounded-xl"
-                        >
-                          Thẻ tiếp theo →
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ===================================================================
-            MỤC 10: CHUYỆN HÓA HỌC HẰNG NGÀY, BÀI BÁO GỢI MỞ & HỎI ĐÁP CÂU HỎI KHÓ (KIỂU FACEBOOK + TÍNH ĐIỂM TƯƠNG TÁC)
-        =================================================================== */}
-        {activeView === "chem_feed" && (
-          <div className="space-y-6">
-            {/* HEADER CHUYÊN MỤC */}
-            <div className="bg-white p-6 rounded-2xl border border-[#E2DFD7] flex flex-wrap items-center justify-between gap-4 shadow-sm">
-              <div>
-                <span className="text-xs font-bold uppercase text-[#9C6644]">
-                  Mục 10 • Diễn đàn Cảm hứng Hóa học & Cộng đồng Học tập Tương tác
-                </span>
-                <h2 className="text-2xl font-bold text-[#1B3B48] mt-0.5">
-                  🧪 Chuyện Hóa Học Hằng Ngày, Đố Vui Nhận Điểm & Góc Hỏi Bài Khó
-                </h2>
-                <p className="text-xs text-[#5C7667] mt-1">
-                  Nơi Thầy đăng các bài báo Hóa học đời sống thú vị, câu hỏi gợi mở để Học sinh bình luận đáp án tích lũy <strong>Điểm Tương Tác</strong>, đồng thời Học sinh có thể đăng <strong>Câu hỏi khó</strong> nhờ Thầy và các bạn cùng giải đáp.
-                </p>
-              </div>
-              <button
-                onClick={goBack}
-                className="px-4 py-2 rounded-xl bg-[#EFECE6] text-[#1B3B48] text-xs font-bold hover:bg-[#E2DFD7]"
-              >
-                ← Quay lại trang trước
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              {/* CỘT TRÁI (8 CỘT): KHUNG ĐĂNG BÀI KIỂU FACEBOOK & DÒNG THỜI GIAN BÀI VIẾT */}
-              <div className="lg:col-span-8 space-y-5">
-                {/* KHUNG ĐĂNG BÀI MỚI (CREATE POST BOX KIỂU FACEBOOK) */}
-                <form
-                  onSubmit={handleCreateChemFeedPost}
-                  className="bg-white p-5 sm:p-6 rounded-2xl border-2 border-[#1B3B48] space-y-4 shadow-sm"
+                <button
+                  onClick={() => setActiveView("home")}
+                  className="text-sm text-[#5C7667] hover:text-[#1B3B48] font-medium px-3 py-2"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EFECE6] pb-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-full bg-[#1B3B48] text-[#E9C46A] flex items-center justify-center font-black text-xs">
-                        {currentUser.role === "teacher" ? "GV" : "HS"}
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-sm sm:text-base text-[#1B3B48]">
-                          {currentUser.role === "teacher"
-                            ? "✍️ Đăng Bài Báo Hóa Học Gợi Mở / Câu Đố Tương Tác / Câu Hỏi"
-                            : `🙋‍♂️ Đăng Câu Hỏi Hóa Học Khó Nhờ Thầy & Bạn Giải Đáp (${currentUser.name})`}
-                        </h3>
-                        <p className="text-[11px] text-[#5C7667]">
-                          Mỗi bình luận tham gia trả lời được <strong>+1 điểm tương tác</strong>; bình luận đúng đáp án được Thầy duyệt nhận thêm <strong>+{newPostForm.rewardPoints} điểm thưởng</strong>!
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                  ← Trang chủ
+                </button>
+              </div>
+            </div>
 
-                  {/* Chọn loại bài đăng */}
-                  {currentUser.role === "teacher" && (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      {[
-                        {
-                          id: "DAILY_STORY",
-                          label: "📰 Chuyện Hóa học & Bài báo gợi mở",
-                        },
-                        {
-                          id: "QUIZ_CHALLENGE",
-                          label: "🧩 Đố vui Hóa học (Bình luận nhận điểm)",
-                        },
-                        {
-                          id: "STUDENT_QA",
-                          label: "🙋‍♂️ Đăng Câu hỏi khó (Thảo luận giải bài)",
-                        },
-                      ].map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() =>
-                            setNewPostForm({ ...newPostForm, postType: t.id })
-                          }
-                          className={`p-2.5 rounded-xl text-xs font-bold border text-left transition ${
-                            newPostForm.postType === t.id
-                              ? "bg-[#1B3B48] text-[#E9C46A] border-[#1B3B48]"
-                              : "bg-[#F7F6F2] text-[#1B3B48] border-[#E2DFD7] hover:bg-[#EFECE6]"
-                          }`}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* PHẦN 1: GIÁO VIÊN GIAO BÀI TẬP MỚI (CÓ HẠN CHÓT KHÓA NỘP BÀI & GỬI EMAIL) */}
+            {userRole === "teacher" && (
+              <div className="bg-[#EFECE6] rounded-2xl p-6 border border-[#D5CFC4]">
+                <h3 className="font-serif font-bold text-lg text-[#1B3B48] mb-3">
+                  📝 Giao Bài Tập Mới cho Lớp / Học Sinh (Có Hạn Chót Khóa Tự Động)
+                </h3>
+                <form onSubmit={handleAssignHomeworkAndEmail} className="space-y-3 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <input
+                      type="text"
+                      required
+                      placeholder="Tiêu đề Bài tập (VD: Bài tập Ester - Lipid số 01)..."
+                      value={hwForm.title}
+                      onChange={(e) => setHwForm({ ...hwForm, title: e.target.value })}
+                      className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white md:col-span-2 font-semibold"
+                    />
                     <select
-                      value={newPostForm.grade}
-                      onChange={(e) =>
-                        setNewPostForm({
-                          ...newPostForm,
-                          grade: e.target.value,
-                        })
-                      }
-                      className="p-2.5 rounded-xl border text-xs bg-[#F7F6F2] font-bold text-[#1B3B48]"
+                      value={hwForm.grade}
+                      onChange={(e) => setHwForm({ ...hwForm, grade: Number(e.target.value) })}
+                      className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold text-[#1B3B48]"
                     >
-                      <option value="ALL">🌐 Tất cả các khối (10 • 11 • 12)</option>
-                      <option value="10">Khối 10</option>
-                      <option value="11">Khối 11</option>
-                      <option value="12">Khối 12</option>
+                      <option value={10}>Khối 10</option>
+                      <option value={11}>Khối 11</option>
+                      <option value={12}>Khối 12</option>
                     </select>
-
-                    {currentUser.role === "teacher" && (
-                      <div className="flex items-center gap-2 bg-[#F7F6F2] px-3 py-2 rounded-xl border">
-                        <span className="text-xs font-bold text-[#1B3B48]">
-                          ⭐ Điểm thưởng đáp án đúng:
-                        </span>
-                        <input
-                          type="number"
-                          min="1"
-                          max="50"
-                          value={newPostForm.rewardPoints}
-                          onChange={(e) =>
-                            setNewPostForm({
-                              ...newPostForm,
-                              rewardPoints: e.target.value,
-                            })
-                          }
-                          className="w-16 p-1 rounded border text-xs font-black text-center bg-white"
-                        />
-                      </div>
-                    )}
-
-                    {currentUser.role === "teacher" &&
-                      newPostForm.postType === "STUDENT_QA" &&
-                      appData.students.length > 0 && (
-                        <select
-                          value={newPostForm.authorStudentId}
-                          onChange={(e) =>
-                            setNewPostForm({
-                              ...newPostForm,
-                              authorStudentId: e.target.value,
-                            })
-                          }
-                          className="p-2.5 rounded-xl border text-xs bg-white font-semibold"
-                        >
-                          <option value="">
-                            -- Đăng với tên Thầy hoặc chọn HS hỏi --
-                          </option>
-                          {appData.students.map((st) => (
-                            <option key={st.id} value={st.id}>
-                              HS hỏi: {st.name} (Lớp {st.classId})
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                    <select
+                      value={hwForm.classId}
+                      onChange={(e) => setHwForm({ ...hwForm, classId: e.target.value })}
+                      className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold text-[#9C6644]"
+                    >
+                      <option value="ALL">Giao cho Toàn bộ Khối</option>
+                      {classesList.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          Giao riêng Lớp {c.id} ({c.name})
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
-                  <input
-                    type="text"
-                    value={newPostForm.title}
-                    onChange={(e) =>
-                      setNewPostForm({ ...newPostForm, title: e.target.value })
-                    }
-                    placeholder={
-                      currentUser.role === "student" ||
-                      newPostForm.postType === "STUDENT_QA"
-                        ? "Tiêu đề câu hỏi khó (VD: Nhờ Thầy và các bạn giải thích giúp em bài toán điện phân hỗn hợp...)"
-                        : "Tiêu đề bài báo / Chuyện Hóa học hôm nay (VD: Vì sao cắt hành tây lại chảy nước mắt? Có công thức Hóa học nào ẩn giấu?)..."
-                    }
-                    className="w-full p-3 rounded-xl border border-[#E2DFD7] text-sm font-bold text-[#1B3B48]"
-                  />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-stone-600 mb-1">
+                        ⏰ Hạn chót nộp bài (Quá giờ tự động khóa):
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={hwForm.deadlineISO}
+                        onChange={(e) => setHwForm({ ...hwForm, deadlineISO: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-stone-600 mb-1">
+                        🎯 Đối tượng nhận bài tập:
+                      </label>
+                      <select
+                        value={hwForm.targetStudentId}
+                        onChange={(e) => setHwForm({ ...hwForm, targetStudentId: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                      >
+                        <option value="ALL">Tất cả học sinh trong Lớp/Khối đã chọn</option>
+                        {students.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            Giao cá nhân: {s.name} ({s.id} - {s.classId})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-stone-600 mb-1">
+                        🔗 Link Đề bài Google Drive / Azota (nếu có):
+                      </label>
+                      <input
+                        type="url"
+                        placeholder="Dán link đề bài..."
+                        value={hwForm.attachmentUrl}
+                        onChange={(e) => setHwForm({ ...hwForm, attachmentUrl: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                      />
+                    </div>
+                  </div>
 
                   <textarea
-                    rows={4}
+                    rows={2}
                     required
-                    value={newPostForm.content}
-                    onChange={(e) =>
-                      setNewPostForm({
-                        ...newPostForm,
-                        content: e.target.value,
-                      })
-                    }
-                    placeholder={
-                      currentUser.role === "student" ||
-                      newPostForm.postType === "STUDENT_QA"
-                        ? "Nhập chi tiết đề bài hoặc chỗ em đang thắc mắc chưa hiểu rõ..."
-                        : "Nội dung bài báo khoa học, hiện tượng Hóa học thực tiễn hoặc câu hỏi gợi mở để học sinh vào bình luận đáp án..."
-                    }
-                    className="w-full p-3 rounded-xl border border-[#E2DFD7] text-sm leading-relaxed"
+                    placeholder="Hướng dẫn làm bài, yêu cầu trình bày danh pháp IUPAC..."
+                    value={hwForm.description}
+                    onChange={(e) => setHwForm({ ...hwForm, description: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
                   />
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center bg-[#F7F6F2] p-3 rounded-xl border border-[#E2DFD7]">
-                    <div>
-                      <label className="block text-[11px] font-bold text-[#1B3B48] mb-1">
-                        📷 Đính kèm Ảnh minh họa / Ảnh chụp đề bài khó:
-                      </label>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <label className="px-3 py-1.5 rounded-lg bg-white border border-[#D5CFC4] cursor-pointer hover:bg-stone-50 font-semibold text-[#1B3B48]">
+                      📎 Đính kèm ảnh/tệp đề bài (&lt;600KB)
                       <input
                         type="file"
-                        accept="image/*,.pdf,.doc,.docx"
-                        onChange={(e) =>
-                          handleFlexibleFileUpload(e, (res) =>
-                            setNewPostForm((prev) => ({
-                              ...prev,
-                              imageName: res.fileName,
-                              imageType: res.fileType,
-                              imageDataUrl: res.dataUrl,
-                            }))
-                          )
-                        }
-                        className="text-xs w-full"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) {
+                            handleFlexibleFileUpload(f, (res) => {
+                              setHwForm((prev) => ({
+                                ...prev,
+                                attachmentFileName: res.fileName,
+                                attachmentDataUrl: res.dataUrl,
+                              }));
+                            });
+                          }
+                        }}
                       />
-                      {newPostForm.imageName && (
-                        <div className="text-[11px] text-emerald-700 font-bold mt-1">
-                          ✓ Đã đính kèm: {newPostForm.imageName}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold text-[#1B3B48] mb-1">
-                        🔗 Link bài báo khoa học / Nguồn tham khảo (Nếu có):
-                      </label>
-                      <input
-                        type="text"
-                        value={newPostForm.articleUrl}
-                        onChange={(e) =>
-                          setNewPostForm({
-                            ...newPostForm,
-                            articleUrl: e.target.value,
-                          })
-                        }
-                        placeholder="https://..."
-                        className="w-full p-2 rounded-lg border text-xs bg-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end">
+                    </label>
                     <button
                       type="submit"
-                      className="bg-[#1B3B48] hover:bg-[#2C4A3E] text-white px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-sm"
+                      className="px-5 py-2.5 rounded-xl bg-[#9C6644] text-white font-bold hover:bg-[#7d5035] shadow-sm"
                     >
-                      {currentUser.role === "student" ||
-                      newPostForm.postType === "STUDENT_QA"
-                        ? "🙋‍♂️ Đăng Câu Hỏi Nhờ Thầy & Bạn Giải Đáp"
-                        : "🚀 Đăng Lên Bảng Tin Chuyện Hóa Học"}
+                      🚀 Phát Hành Bài Tập & Gửi Email Thông Báo
                     </button>
                   </div>
                 </form>
+              </div>
+            )}
 
-                {/* THANH LỌC BÀI VIẾT TRÊN BẢNG TIN */}
-                <div className="bg-white p-4 rounded-2xl border border-[#E2DFD7] flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      { id: "ALL", label: "🌐 Tất cả bài đăng" },
-                      {
-                        id: "DAILY_STORY",
-                        label: "📰 Chuyện Hóa học & Bài báo",
-                      },
-                      {
-                        id: "QUIZ_CHALLENGE",
-                        label: "🧩 Đố vui gợi mở (+Điểm)",
-                      },
-                      {
-                        id: "STUDENT_QA",
-                        label: "🙋‍♂️ Câu hỏi khó của HS",
-                      },
-                    ].map((tab) => (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setFeedFilterType(tab.id)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                          feedFilterType === tab.id
-                            ? "bg-[#1B3B48] text-[#E9C46A]"
-                            : "bg-[#EFECE6] text-[#1B3B48] hover:bg-[#E2DFD7]"
+            {/* PHẦN 2: DANH SÁCH BÀI TẬP ĐÃ GIAO & CỔNG NỘP BÀI CHO HỌC SINH */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white rounded-2xl p-6 border border-[#E5E0D8] shadow-sm space-y-4">
+                <h3 className="font-serif font-bold text-lg text-[#1B3B48]">
+                  📋 Danh sách Bài Tập Đang Giao ({homeworks.length})
+                </h3>
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                  {homeworks.map((hw) => {
+                    const expired = isHomeworkPastDeadline(hw, currentClock);
+                    const subCount = homeworkSubmissions.filter(
+                      (s) => s.homeworkId === hw.id
+                    ).length;
+                    return (
+                      <div
+                        key={hw.id}
+                        className={`p-4 rounded-xl border ${
+                          expired
+                            ? "bg-stone-50 border-stone-200"
+                            : "bg-[#F7F6F2] border-[#D5CFC4]"
                         }`}
                       >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <select
-                    value={feedFilterGrade}
-                    onChange={(e) => setFeedFilterGrade(e.target.value)}
-                    className="p-2 rounded-xl border text-xs bg-[#F7F6F2] font-bold text-[#1B3B48]"
-                  >
-                    <option value="ALL">Mọi khối lớp</option>
-                    <option value="10">Khối 10</option>
-                    <option value="11">Khối 11</option>
-                    <option value="12">Khối 12</option>
-                  </select>
-                </div>
-
-                {/* DANH SÁCH BÀI VIẾT KIỂU FACEBOOK FEED */}
-                {(appData.chemFeedPosts || []).filter((p) => {
-                  if (!matchesSelectedYear(p.academicYear)) return false;
-                  if (
-                    feedFilterType !== "ALL" &&
-                    p.postType !== feedFilterType
-                  ) {
-                    return false;
-                  }
-                  if (
-                    feedFilterGrade !== "ALL" &&
-                    p.grade !== "ALL" &&
-                    p.grade !== feedFilterGrade
-                  ) {
-                    return false;
-                  }
-                  return true;
-                }).length === 0 ? (
-                  <div className="bg-white p-8 rounded-2xl border border-dashed border-[#DFDBD0] text-center space-y-2">
-                    <div className="text-base font-bold text-[#1B3B48]">
-                      🧪 Chưa có bài viết hoặc câu hỏi nào trên Bảng tin Hóa học
-                    </div>
-                    <p className="text-xs text-[#5C7667]">
-                      Giáo viên có thể đăng bài báo Hóa học đời sống thú vị hoặc câu hỏi đố vui ở khung phía trên; Học sinh có thể đăng câu hỏi khó để cả lớp cùng bình luận giải đáp và tích điểm tương tác!
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-5">
-                    {(appData.chemFeedPosts || [])
-                      .filter((p) => {
-                        if (!matchesSelectedYear(p.academicYear)) return false;
-                        if (
-                          feedFilterType !== "ALL" &&
-                          p.postType !== feedFilterType
-                        ) {
-                          return false;
-                        }
-                        if (
-                          feedFilterGrade !== "ALL" &&
-                          p.grade !== "ALL" &&
-                          p.grade !== feedFilterGrade
-                        ) {
-                          return false;
-                        }
-                        return true;
-                      })
-                      .map((post) => {
-                        const actorId =
-                          currentUser?.role === "student"
-                            ? currentUser.studentId
-                            : "TEACHER";
-                        const liked = (post.likes || []).includes(actorId);
-                        const loved = (post.loves || []).includes(actorId);
-                        const ideaed = (post.ideas || []).includes(actorId);
-                        const draftObj = commentDrafts[post.id] || {};
-                        const attachObj = commentAttachments[post.id] || null;
-
-                        return (
-                          <article
-                            key={post.id}
-                            className="bg-white rounded-2xl border border-[#E2DFD7] shadow-sm overflow-hidden"
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-[#1B3B48] text-[#E9C46A]">
+                            Khối {hw.grade} • {hw.classId === "ALL" ? "Mọi lớp" : hw.classId}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              expired
+                                ? "bg-red-100 text-red-700"
+                                : "bg-emerald-100 text-emerald-800"
+                            }`}
                           >
-                            {/* Post Header kiểu Facebook */}
-                            <div className="p-5 flex items-start justify-between gap-3 border-b border-[#F7F6F2]">
-                              <div className="flex items-center gap-3">
-                                <div
-                                  className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-xs text-white ${
-                                    post.authorRole === "teacher"
-                                      ? "bg-[#1B3B48]"
-                                      : "bg-[#2C4A3E]"
-                                  }`}
-                                >
-                                  {post.authorRole === "teacher" ? "GV" : "HS"}
-                                </div>
-                                <div>
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="font-extrabold text-sm text-[#1B3B48]">
-                                      {post.authorName}
-                                    </span>
-                                    <span
-                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-                                        post.postType === "STUDENT_QA"
-                                          ? "bg-rose-100 text-rose-800"
-                                          : post.postType === "QUIZ_CHALLENGE"
-                                          ? "bg-amber-100 text-amber-900"
-                                          : "bg-sky-100 text-sky-900"
-                                      }`}
-                                    >
-                                      {post.postType === "STUDENT_QA"
-                                        ? "🙋‍♂️ Câu hỏi khó cần giải đáp"
-                                        : post.postType === "QUIZ_CHALLENGE"
-                                        ? `🧩 Đố vui Hóa học (+${post.rewardPoints} điểm thưởng)`
-                                        : `📰 Chuyện Hóa học hằng ngày (+${post.rewardPoints} điểm thưởng)`}
-                                    </span>
-                                    {post.isResolved && (
-                                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 text-[10px] font-extrabold">
-                                        ✅ Đã có lời giải đúng
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="text-[11px] text-[#5C7667] mt-0.5">
-                                    🕒 {post.createdAt} •{" "}
-                                    {post.grade === "ALL"
-                                      ? "Toàn khối 10 • 11 • 12"
-                                      : `Khối ${post.grade}`}
-                                  </div>
-                                </div>
-                              </div>
-
-                              {(currentUser.role === "teacher" ||
-                                (currentUser.role === "student" &&
-                                  post.authorId === currentUser.studentId)) && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    askConfirm(
-                                      "Bạn có chắc muốn xóa bài đăng này khỏi Bảng tin Hóa học?",
-                                      () => {
-                                        saveToAll({
-                                          ...appData,
-                                          chemFeedPosts: (
-                                            appData.chemFeedPosts || []
-                                          ).filter((x) => x.id !== post.id),
-                                        });
-                                        notify("Đã xóa bài đăng.", "info");
-                                      }
-                                    )
-                                  }
-                                  className="text-xs text-red-600 font-bold hover:underline"
-                                >
-                                  🗑 Xóa bài
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Post Body */}
-                            <div className="p-5 space-y-3">
-                              {post.title && (
-                                <h4 className="font-extrabold text-base sm:text-lg text-[#1B3B48] leading-snug">
-                                  {post.title}
-                                </h4>
-                              )}
-                              <p className="text-sm text-[#1B3B48]/90 whitespace-pre-line leading-relaxed">
-                                {post.content}
-                              </p>
-
-                              {post.articleUrl && (
-                                <div className="p-3 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] flex items-center justify-between gap-2 text-xs">
-                                  <span className="font-bold text-[#1B3B48] truncate">
-                                    🔗 Nguồn bài báo / Tài liệu gợi mở:{" "}
-                                    {post.articleUrl}
-                                  </span>
-                                  <a
-                                    href={post.articleUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="px-3 py-1 rounded-lg bg-[#1B3B48] text-white font-bold shrink-0"
-                                  >
-                                    Đọc bài báo →
-                                  </a>
-                                </div>
-                              )}
-
-                              {post.imageDataUrl && (
-                                <div className="rounded-xl overflow-hidden border border-[#E2DFD7] bg-[#F7F6F2] p-2 flex justify-center">
-                                  {post.imageType === "image" ? (
-                                    <img
-                                      src={post.imageDataUrl}
-                                      alt={post.title || "Hình minh họa Hóa học"}
-                                      className="max-w-full h-auto max-h-96 object-contain rounded-lg"
-                                    />
-                                  ) : (
-                                    <a
-                                      href={post.imageDataUrl}
-                                      download={post.imageName || "tailieu_hoa"}
-                                      className="px-4 py-2 rounded-xl bg-[#5C7667] text-white text-xs font-bold"
-                                    >
-                                      📎 Tải tệp đính kèm ({post.imageName})
-                                    </a>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Thanh Reaction kiểu Facebook */}
-                            <div className="px-5 py-2.5 bg-[#F7F6F2] border-y border-[#E2DFD7] flex flex-wrap items-center justify-between gap-2 text-xs">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleTogglePostReaction(post.id, "likes")
-                                  }
-                                  className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition ${
-                                    liked
-                                      ? "bg-[#1B3B48] text-white"
-                                      : "bg-white text-[#1B3B48] border border-[#E2DFD7] hover:bg-[#EFECE6]"
-                                  }`}
-                                >
-                                  <span>👍 Thích</span>
-                                  <span className="px-1.5 py-0.2 rounded-full bg-black/10 text-[11px]">
-                                    {(post.likes || []).length}
-                                  </span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleTogglePostReaction(post.id, "loves")
-                                  }
-                                  className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition ${
-                                    loved
-                                      ? "bg-rose-600 text-white"
-                                      : "bg-white text-[#1B3B48] border border-[#E2DFD7] hover:bg-[#EFECE6]"
-                                  }`}
-                                >
-                                  <span>❤️ Yêu Hóa học</span>
-                                  <span className="px-1.5 py-0.2 rounded-full bg-black/10 text-[11px]">
-                                    {(post.loves || []).length}
-                                  </span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleTogglePostReaction(post.id, "ideas")
-                                  }
-                                  className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition ${
-                                    ideaed
-                                      ? "bg-amber-500 text-[#1B3B48]"
-                                      : "bg-white text-[#1B3B48] border border-[#E2DFD7] hover:bg-[#EFECE6]"
-                                  }`}
-                                >
-                                  <span>💡 Phát hiện hay</span>
-                                  <span className="px-1.5 py-0.2 rounded-full bg-black/10 text-[11px]">
-                                    {(post.ideas || []).length}
-                                  </span>
-                                </button>
-                              </div>
-
-                              <span className="text-[#5C7667] font-bold">
-                                💬 {(post.comments || []).length} bình luận đáp án & giải đáp
-                              </span>
-                            </div>
-
-                            {/* Khu vực Danh sách Bình luận & Ô nhập Bình luận kiểu Facebook */}
-                            <div className="p-5 bg-[#F7F6F2]/50 space-y-3">
-                              {(post.comments || []).length > 0 && (
-                                <div className="space-y-2.5">
-                                  {(post.comments || []).map((cmt) => (
-                                    <div
-                                      key={cmt.id}
-                                      className={`p-3.5 rounded-2xl border text-xs space-y-1.5 ${
-                                        cmt.isApprovedCorrect
-                                          ? "bg-emerald-50 border-emerald-400 shadow-sm"
-                                          : cmt.authorRole === "teacher"
-                                          ? "bg-amber-50/70 border-[#E9C46A]"
-                                          : "bg-white border-[#E2DFD7]"
-                                      }`}
-                                    >
-                                      <div className="flex flex-wrap items-center justify-between gap-2">
-                                        <div className="flex flex-wrap items-center gap-1.5">
-                                          <span className="font-extrabold text-[#1B3B48]">
-                                            {cmt.authorRole === "teacher"
-                                              ? `👨‍🏫 ${cmt.authorName}`
-                                              : `👤 ${cmt.authorName} (Lớp ${cmt.authorClass})`}
-                                          </span>
-                                          {cmt.authorRole === "student" && (
-                                            <span className="px-2 py-0.5 rounded-full bg-[#1B3B48] text-[#E9C46A] text-[10px] font-bold">
-                                              +{cmt.awardedPoints || 1} điểm tương tác
-                                            </span>
-                                          )}
-                                          {cmt.isApprovedCorrect && (
-                                            <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-extrabold">
-                                              🌟 Đáp án đúng / Lời giải xuất sắc
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-[10px] text-[#5C7667]">
-                                            {cmt.createdAt}
-                                          </span>
-                                          {currentUser.role === "teacher" &&
-                                            cmt.authorRole === "student" && (
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  handleApproveCommentAnswer(
-                                                    post,
-                                                    cmt
-                                                  )
-                                                }
-                                                className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold transition ${
-                                                  cmt.isApprovedCorrect
-                                                    ? "bg-gray-200 text-[#1B3B48]"
-                                                    : "bg-emerald-600 hover:bg-emerald-700 text-white"
-                                                }`}
-                                              >
-                                                {cmt.isApprovedCorrect
-                                                  ? "✓ Đã thưởng điểm"
-                                                  : `⭐ Duyệt Đúng (+${post.rewardPoints} điểm)`}
-                                              </button>
-                                            )}
-                                        </div>
-                                      </div>
-
-                                      {cmt.text && (
-                                        <p className="text-[#1B3B48] whitespace-pre-line leading-relaxed">
-                                          {cmt.text}
-                                        </p>
-                                      )}
-
-                                      {cmt.attachmentDataUrl && (
-                                        <div className="pt-1">
-                                          {cmt.attachmentType === "image" ? (
-                                            <img
-                                              src={cmt.attachmentDataUrl}
-                                              alt="Ảnh lời giải"
-                                              className="max-h-52 rounded-xl border border-[#E2DFD7]"
-                                            />
-                                          ) : (
-                                            <a
-                                              href={cmt.attachmentDataUrl}
-                                              download={
-                                                cmt.attachmentName || "loigiai"
-                                              }
-                                              className="inline-block px-3 py-1 rounded bg-[#5C7667] text-white text-[11px] font-bold"
-                                            >
-                                              📎 Tải tệp lời giải (
-                                              {cmt.attachmentName})
-                                            </a>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-
-                              {/* Form viết bình luận đáp án / lời giải */}
-                              <form
-                                onSubmit={(e) => handleAddPostComment(e, post)}
-                                className="space-y-2 pt-1"
+                            {formatDeadlineCountdown(hw, currentClock)}
+                          </span>
+                        </div>
+                        <h4 className="font-serif font-bold text-[#1B3B48] text-sm mb-1">
+                          {hw.title}
+                        </h4>
+                        <p className="text-xs text-stone-600 mb-2">{hw.description}</p>
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-stone-200/70 text-[11px]">
+                          <span className="font-mono text-stone-500">
+                            Hạn nộp: {hw.dueDate} • Đã nộp: <b>{subCount}</b> bài
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {hw.attachmentUrl && (
+                              <a
+                                href={hw.attachmentUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[#1B3B48] font-bold hover:underline"
                               >
-                                {currentUser.role === "teacher" &&
-                                  appData.students.length > 0 && (
-                                    <div className="flex items-center gap-2 text-[11px]">
-                                      <span className="font-bold text-[#5C7667]">
-                                        Bình luận với tư cách:
-                                      </span>
-                                      <select
-                                        value={draftObj.asStudentId || ""}
-                                        onChange={(e) =>
-                                          setCommentDrafts({
-                                            ...commentDrafts,
-                                            [post.id]: {
-                                              ...draftObj,
-                                              asStudentId: e.target.value,
-                                            },
-                                          })
-                                        }
-                                        className="px-2 py-1 rounded-lg border bg-white font-bold text-[#1B3B48]"
-                                      >
-                                        <option value="">
-                                          👨‍🏫 Giáo viên ({TEACHER_INFO.fullName})
-                                        </option>
-                                        {appData.students.map((st) => (
-                                          <option key={st.id} value={st.id}>
-                                            👤 Học sinh: {st.name} (Lớp{" "}
-                                            {st.classId})
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                  )}
-
-                                <div className="flex flex-col sm:flex-row gap-2">
-                                  <input
-                                    type="text"
-                                    value={draftObj.text || ""}
-                                    onChange={(e) =>
-                                      setCommentDrafts({
-                                        ...commentDrafts,
-                                        [post.id]: {
-                                          ...draftObj,
-                                          text: e.target.value,
-                                        },
-                                      })
-                                    }
-                                    placeholder="Viết bình luận đáp án hoặc lời giải của bạn (+1 điểm tương tác)..."
-                                    className="flex-1 p-2.5 rounded-xl border border-[#E2DFD7] text-xs bg-white"
-                                  />
-                                  <button
-                                    type="submit"
-                                    className="bg-[#1B3B48] hover:bg-[#2C4A3E] text-white px-4 py-2.5 rounded-xl text-xs font-bold shrink-0"
-                                  >
-                                    Gửi bình luận
-                                  </button>
-                                </div>
-
-                                <div className="flex items-center justify-between text-[11px] text-[#5C7667]">
-                                  <label className="cursor-pointer hover:underline font-semibold flex items-center gap-1">
-                                    <span>📷 Đính kèm ảnh chụp nháp/lời giải:</span>
-                                    <input
-                                      type="file"
-                                      accept="image/*,.pdf"
-                                      onChange={(e) =>
-                                        handleFlexibleFileUpload(e, (res) =>
-                                          setCommentAttachments((prev) => ({
-                                            ...prev,
-                                            [post.id]: res,
-                                          }))
-                                        )
-                                      }
-                                      className="text-[10px]"
-                                    />
-                                  </label>
-                                  {attachObj && (
-                                    <span className="text-emerald-700 font-bold">
-                                      ✓ Đã chọn: {attachObj.fileName}
-                                    </span>
-                                  )}
-                                </div>
-                              </form>
-                            </div>
-                          </article>
-                        );
-                      })}
-                  </div>
-                )}
+                                🔗 Mở đề bài
+                              </a>
+                            )}
+                            {hw.attachmentDataUrl && (
+                              <a
+                                href={hw.attachmentDataUrl}
+                                download={hw.attachmentFileName || "De_bai"}
+                                className="text-[#2C4A3E] font-bold hover:underline"
+                              >
+                                ⬇ Tải tệp đề
+                              </a>
+                            )}
+                            {!expired && (
+                              <button
+                                onClick={() =>
+                                  setHwSubmitForm((prev) => ({ ...prev, homeworkId: hw.id }))
+                                }
+                                className="px-2.5 py-1 rounded bg-[#9C6644] text-white font-bold hover:bg-[#7d5035]"
+                              >
+                                📤 Chọn nộp bài này
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* CỘT PHẢI (4 CỘT): BẢNG XẾP HẠNG ĐIỂM TƯƠNG TÁC HÓA HỌC & QUY ĐỔI VÀO HỒ SƠ */}
-              <div className="lg:col-span-4 space-y-5">
-                <div className="bg-white p-5 rounded-2xl border-2 border-[#E9C46A] shadow-sm space-y-4">
-                  <div className="space-y-1 border-b border-[#EFECE6] pb-3">
-                    <span className="px-2.5 py-0.5 rounded-full bg-[#1B3B48] text-[#E9C46A] text-[10px] font-extrabold uppercase">
-                      🏆 Bảng Xếp Hạng Tương Tác
-                    </span>
-                    <h3 className="font-extrabold text-base text-[#1B3B48] pt-1">
-                      Điểm Tương Tác & Giải Đáp Hóa Học
-                    </h3>
-                    <p className="text-[11px] text-[#5C7667]">
-                      Học sinh bình luận trả lời bài viết (<strong>+1 điểm</strong>), đăng câu hỏi hay (<strong>+2 điểm</strong>) và được Thầy duyệt đáp án đúng (<strong>+Điểm thưởng</strong>).
-                    </p>
+              {/* CỔNG HỌC SINH NỘP BÀI TẬP */}
+              <div className="bg-white rounded-2xl p-6 border border-[#E5E0D8] shadow-sm">
+                <h3 className="font-serif font-bold text-lg text-[#1B3B48] mb-3">
+                  📤 Cổng Học Sinh Nộp Bài Tập Về Nhà
+                </h3>
+                <form onSubmit={handleSubmitHomeworkWork} className="space-y-3 text-xs">
+                  <div>
+                    <label className="block font-bold text-stone-600 mb-1">
+                      1. Chọn Bài tập cần nộp:
+                    </label>
+                    <select
+                      required
+                      value={hwSubmitForm.homeworkId}
+                      onChange={(e) =>
+                        setHwSubmitForm({ ...hwSubmitForm, homeworkId: e.target.value })
+                      }
+                      className="w-full px-3 py-2.5 rounded-xl border border-[#D5CFC4] bg-[#F7F6F2] font-bold text-[#1B3B48]"
+                    >
+                      <option value="">-- Chọn bài tập --</option>
+                      {homeworks.map((h) => {
+                        const expired = isHomeworkPastDeadline(h, currentClock);
+                        return (
+                          <option key={h.id} value={h.id} disabled={expired}>
+                            [{h.classId || `Khối ${h.grade}`}] {h.title}{" "}
+                            {expired ? "(ĐÃ KHÓA HẠN NỘP)" : `(Hạn: ${h.dueDate})`}
+                          </option>
+                        );
+                      })}
+                    </select>
                   </div>
 
-                  {appData.students.length === 0 ? (
-                    <p className="text-xs text-[#5C7667] italic text-center py-4">
-                      Chưa có học sinh nào trong lớp. Hãy thêm học sinh ở Mục 09 để tính điểm tương tác.
-                    </p>
-                  ) : (
-                    <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1">
-                      {[...appData.students]
-                        .sort(
-                          (a, b) =>
-                            Number(b.engagementPoints || 0) -
-                            Number(a.engagementPoints || 0)
-                        )
-                        .map((st, i) => {
-                          const pts = Number(st.engagementPoints || 0);
-                          return (
-                            <div
-                              key={st.id}
-                              className="p-3 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] flex items-center justify-between gap-2 text-xs"
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <span
-                                  className={`w-6 h-6 rounded-full flex items-center justify-center font-black text-[11px] shrink-0 ${
-                                    i === 0
-                                      ? "bg-[#E9C46A] text-[#1B3B48]"
-                                      : i === 1
-                                      ? "bg-[#2C4A3E] text-white"
-                                      : "bg-white border text-[#1B3B48]"
-                                  }`}
-                                >
-                                  {i + 1}
-                                </span>
-                                <div className="min-w-0">
-                                  <div className="font-bold text-[#1B3B48] truncate">
-                                    {st.name}
-                                  </div>
-                                  <div className="text-[10px] text-[#5C7667]">
-                                    Lớp {st.classId} •{" "}
-                                    <strong className="text-[#2C4A3E]">
-                                      ⭐ {pts} điểm tương tác
-                                    </strong>
-                                  </div>
-                                </div>
-                              </div>
+                  <div>
+                    <label className="block font-bold text-stone-600 mb-1">
+                      2. Trình bày lời giải / Đáp án trực tiếp hoặc Link bài làm:
+                    </label>
+                    <textarea
+                      rows={4}
+                      placeholder="Nhập lời giải, đáp án hoặc dán link Google Drive chứa ảnh bài giải của em..."
+                      value={hwSubmitForm.answerText}
+                      onChange={(e) =>
+                        setHwSubmitForm({ ...hwSubmitForm, answerText: e.target.value })
+                      }
+                      className="w-full px-3 py-2 rounded-xl border border-[#D5CFC4] bg-[#F7F6F2]"
+                    />
+                  </div>
 
-                              {currentUser.role === "teacher" && (
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      adjustStudentEngagementPoints(st.id, 1)
-                                    }
-                                    className="px-2 py-1 rounded bg-[#EFECE6] hover:bg-[#E2DFD7] text-[#1B3B48] font-bold text-[10px]"
-                                    title="Cộng nhanh 1 điểm tương tác"
-                                  >
-                                    +1
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleConvertEngagementToProfileScore(st)
-                                    }
-                                    className="px-2 py-1 rounded bg-[#1B3B48] text-[#E9C46A] font-bold text-[10px]"
-                                    title="Nhập điểm thưởng tương tác vào Hồ sơ học tập Mục 04"
-                                  >
-                                    Nhập Hồ sơ
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <label className="px-3.5 py-2 rounded-xl bg-[#EFECE6] border border-[#D5CFC4] cursor-pointer hover:bg-[#E5E0D8] font-bold text-[#1B3B48]">
+                      📷 Đính kèm Ảnh chụp bài giải / File (&lt;600KB)
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) {
+                            handleFlexibleFileUpload(f, (res) => {
+                              setHwSubmitForm((prev) => ({
+                                ...prev,
+                                fileName: res.fileName,
+                                fileDataUrl: res.dataUrl,
+                              }));
+                            });
+                          }
+                        }}
+                      />
+                    </label>
+                    {hwSubmitForm.fileName && (
+                      <span className="text-emerald-700 font-semibold">
+                        ✓ Đã đính kèm: {hwSubmitForm.fileName}
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3 rounded-xl bg-[#1B3B48] text-white font-bold hover:bg-[#2C4A3E] shadow-sm mt-2"
+                  >
+                    ✓ Gửi Bài Làm Cho Thầy Tuấn Anh
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            {/* PHẦN 3: BẢNG THEO DÕI & CHẤM ĐIỂM BÀI TẬP (ĐỒNG BỘ SANG MỤC 04) */}
+            <div className="bg-white rounded-2xl p-6 border border-[#E5E0D8] shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="font-serif font-bold text-lg text-[#1B3B48]">
+                    ✅ Bảng Theo Dõi Nộp Bài & Chấm Điểm Tự Động Đồng Bộ Hồ Sơ (Mục 04)
+                  </h3>
+                  <p className="text-xs text-stone-500">
+                    Khi Giáo viên nhập điểm và bấm Lưu chấm điểm, điểm số sẽ tự động ghi vào Hồ sơ Học sinh ở Mục 04.
+                  </p>
                 </div>
+                <select
+                  value={selectedHwForTracking}
+                  onChange={(e) => setSelectedHwForTracking(e.target.value)}
+                  className="px-3 py-2 rounded-xl border border-[#D5CFC4] bg-[#F7F6F2] text-xs font-bold text-[#1B3B48]"
+                >
+                  <option value="ALL">Xem tất cả bài nộp ({homeworkSubmissions.length})</option>
+                  {homeworks.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#1B3B48] text-white font-mono uppercase">
+                      <th className="p-3">Học sinh</th>
+                      <th className="p-3">Bài tập</th>
+                      <th className="p-3">Thời gian nộp</th>
+                      <th className="p-3">Bài làm / Tệp đính kèm</th>
+                      <th className="p-3">Điểm số</th>
+                      <th className="p-3">Nhận xét & Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E5E0D8]">
+                    {homeworkSubmissions
+                      .filter(
+                        (s) =>
+                          selectedHwForTracking === "ALL" ||
+                          s.homeworkId === selectedHwForTracking
+                      )
+                      .map((sub) => (
+                        <tr key={sub.id} className="hover:bg-stone-50">
+                          <td className="p-3 font-bold text-[#1B3B48]">
+                            {sub.studentName}{" "}
+                            <span className="font-mono text-[10px] text-stone-400 block">
+                              {sub.studentId} • Lớp {sub.classId}
+                            </span>
+                          </td>
+                          <td className="p-3 font-medium text-[#2C4A3E]">{sub.homeworkTitle}</td>
+                          <td className="p-3 font-mono text-stone-500">{sub.submittedAt}</td>
+                          <td className="p-3">
+                            <div className="max-w-xs truncate text-stone-700 mb-1">
+                              {sub.answerText || "(Chỉ đính kèm tệp)"}
+                            </div>
+                            {sub.fileDataUrl && (
+                              <a
+                                href={sub.fileDataUrl}
+                                download={sub.fileName || "Bai_lam_HS"}
+                                className="inline-block px-2 py-0.5 rounded bg-[#EFECE6] text-[#1B3B48] font-bold text-[10px]"
+                              >
+                                📎 Tải tệp: {sub.fileName}
+                              </a>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            {sub.status === "graded" ? (
+                              <span className="px-2.5 py-1 rounded-full bg-emerald-700 text-white font-bold">
+                                {sub.score} đ
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">
+                                Chờ chấm
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            {userRole === "teacher" ? (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  max="10"
+                                  placeholder="Điểm"
+                                  value={
+                                    gradingBuffer[sub.id]?.score ??
+                                    (sub.score !== undefined ? String(sub.score) : "")
+                                  }
+                                  onChange={(e) =>
+                                    setGradingBuffer({
+                                      ...gradingBuffer,
+                                      [sub.id]: {
+                                        score: e.target.value,
+                                        feedback:
+                                          gradingBuffer[sub.id]?.feedback ??
+                                          (sub.teacherFeedback || ""),
+                                      },
+                                    })
+                                  }
+                                  className="w-16 px-2 py-1 rounded border border-[#D5CFC4] bg-white font-bold"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Nhận xét..."
+                                  value={
+                                    gradingBuffer[sub.id]?.feedback ?? (sub.teacherFeedback || "")
+                                  }
+                                  onChange={(e) =>
+                                    setGradingBuffer({
+                                      ...gradingBuffer,
+                                      [sub.id]: {
+                                        score:
+                                          gradingBuffer[sub.id]?.score ??
+                                          (sub.score !== undefined ? String(sub.score) : ""),
+                                        feedback: e.target.value,
+                                      },
+                                    })
+                                  }
+                                  className="w-32 px-2 py-1 rounded border border-[#D5CFC4] bg-white"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleGradeHomeworkAndSyncProfile(sub)}
+                                  className="px-2.5 py-1 rounded bg-[#1B3B48] text-white font-bold hover:bg-[#2C4A3E]"
+                                >
+                                  Lưu điểm
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-stone-600 italic">
+                                {sub.teacherFeedback || "Chưa có nhận xét"}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
         )}
 
-        {/* ===================================================================
-            MỤC 09: QUẢN TRỊ LỚP HỌC, NĂM HỌC, ĐÍNH KÈM TÀI LIỆU LỚP, ĐIỂM DANH, EXCEL
-        =================================================================== */}
-        {activeView === "students_admin" && currentUser.role === "teacher" && (
+
+        {/* ============================================================ */}
+        {/* MỤC 06: NGÂN HÀNG ĐỀ KIỂM TRA & BÀI THI THỬ                  */}
+        {/* ============================================================ */}
+        {activeView === "exams" && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-[#E2DFD7] flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E5E0D8] pb-4">
               <div>
-                <span className="text-xs font-bold uppercase text-[#5C7667]">
-                  Mục 09 • Độc quyền Giáo viên ({TEACHER_INFO.email})
+                <span className="text-xs font-mono uppercase tracking-widest text-[#9C6644] block mb-1">
+                  MỤC 06 // EXAM BANK & MOCK TESTS
                 </span>
-                <h2 className="text-2xl font-bold text-[#1B3B48]">
-                  Quản lý Năm học, Lớp học (Đính kèm Tài liệu hôm nay), Điểm danh & Nhập Excel
+                <h2 className="text-2xl font-serif font-bold text-[#1B3B48]">
+                  Ngân hàng Đề Kiểm tra, Thi thử & Cổng Nộp bài Chấm điểm
                 </h2>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowYearManagerModal(true)}
-                  className="px-4 py-2 rounded-xl bg-[#1B3B48] text-[#E9C46A] text-xs font-bold"
-                >
-                  📅 Quản lý Năm học
-                </button>
-                <button
-                  onClick={handleExportCSV}
-                  className="px-4 py-2 rounded-xl bg-[#2C4A3E] text-white text-xs font-bold"
-                >
-                  ⬇ Xuất Danh sách & Điểm ra Excel (.CSV)
-                </button>
-                <button
-                  onClick={goBack}
-                  className="px-4 py-2 rounded-xl bg-[#EFECE6] text-[#1B3B48] text-xs font-bold hover:bg-[#E2DFD7]"
-                >
-                  ← Quay lại trang trước
-                </button>
-              </div>
+              <button
+                onClick={() => setActiveView("home")}
+                className="text-sm text-[#5C7667] hover:text-[#1B3B48] font-medium"
+              >
+                ← Quay lại Trang chủ
+              </button>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border-2 border-[#1B3B48] space-y-5">
-              <h3 className="font-bold text-base text-[#1B3B48]">
-                1. Tạo Lớp học mới theo Năm học & Danh sách Lớp ({yearFilteredClasses.length} lớp)
+            {userRole === "teacher" && (
+              <div className="bg-[#EFECE6] rounded-2xl p-6 border border-[#D5CFC4]">
+                <h3 className="font-serif font-bold text-lg text-[#1B3B48] mb-3">
+                  ➕ Tạo Đề Kiểm Tra / Đề Thi Thử Mới
+                </h3>
+                <form onSubmit={handleAddExamPaper} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Tên đề thi (VD: Đề thi thử TN THPT Lần 2)..."
+                    value={examForm.title}
+                    onChange={(e) => setExamForm({ ...examForm, title: e.target.value })}
+                    className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white md:col-span-2"
+                  />
+                  <select
+                    value={examForm.grade}
+                    onChange={(e) => setExamForm({ ...examForm, grade: Number(e.target.value) })}
+                    className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold"
+                  >
+                    <option value={10}>Khối 10</option>
+                    <option value={11}>Khối 11</option>
+                    <option value={12}>Khối 12</option>
+                  </select>
+                  <select
+                    value={examForm.classId}
+                    onChange={(e) => setExamForm({ ...examForm, classId: e.target.value })}
+                    className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold text-[#9C6644]"
+                  >
+                    <option value="ALL">Mọi lớp trong Khối</option>
+                    {classesList.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        Lớp {c.id} - {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={examForm.category}
+                    onChange={(e) => setExamForm({ ...examForm, category: e.target.value })}
+                    className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                  >
+                    {EXAM_CATEGORIES.filter((c) => c !== "Tất cả").map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    placeholder="Thời gian (phút)"
+                    value={examForm.duration}
+                    onChange={(e) => setExamForm({ ...examForm, duration: Number(e.target.value) })}
+                    className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                  />
+                  <input
+                    type="url"
+                    placeholder="Link App Thi Online / Azota / Google Form..."
+                    value={examForm.examAppLink}
+                    onChange={(e) => setExamForm({ ...examForm, examAppLink: e.target.value })}
+                    className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-lg bg-[#1B3B48] text-white font-bold hover:bg-[#2C4A3E]"
+                  >
+                    + Đăng Đề Thi
+                  </button>
+                </form>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {examPapers.map((ex) => (
+                <div
+                  key={ex.id}
+                  className="bg-white rounded-2xl p-5 border border-[#E5E0D8] shadow-sm flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-[#1B3B48] text-[#E9C46A]">
+                        Khối {ex.grade} • {ex.category}
+                      </span>
+                      <span className="text-xs font-mono text-stone-500">
+                        ⏱ {ex.duration} phút • {ex.questionCount} câu
+                      </span>
+                    </div>
+                    <h4 className="font-serif font-bold text-[#1B3B48] text-base mb-1">
+                      {ex.title}
+                    </h4>
+                    <p className="text-xs text-stone-500 mb-3">
+                      Hạn nộp: {ex.deadline} • Mã đề: {ex.id}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-[#E5E0D8]">
+                    <div className="flex gap-2">
+                      {ex.examAppLink && (
+                        <a
+                          href={ex.examAppLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-[#2C4A3E] text-white text-xs font-bold hover:bg-[#1B3B48]"
+                        >
+                          🚀 Mở App Làm Bài
+                        </a>
+                      )}
+                      {ex.fileDataUrl && (
+                        <a
+                          href={ex.fileDataUrl}
+                          download={ex.fileName || ex.title}
+                          className="px-3 py-1.5 rounded-lg bg-[#EFECE6] text-[#1B3B48] text-xs font-bold"
+                        >
+                          ⬇ Tải Đề PDF
+                        </a>
+                      )}
+                    </div>
+                    {userRole === "teacher" && (
+                      <button
+                        onClick={() => handleDeleteExamPaper(ex.id)}
+                        className="text-xs text-red-600 hover:underline font-semibold"
+                      >
+                        Xóa đề
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* MỤC 07: BẢNG VÀNG THÀNH TÍCH HỌC SINH                        */}
+        {/* ============================================================ */}
+        {activeView === "honor" && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E5E0D8] pb-4">
+              <div>
+                <span className="text-xs font-mono uppercase tracking-widest text-[#9C6644] block mb-1">
+                  MỤC 07 // HALL OF FAME & HONOR ROLL
+                </span>
+                <h2 className="text-2xl font-serif font-bold text-[#1B3B48]">
+                  Bảng Vàng Vinh Danh Học Sinh Xuất Sắc
+                </h2>
+              </div>
+              <button
+                onClick={() => setActiveView("home")}
+                className="text-sm text-[#5C7667] hover:text-[#1B3B48] font-medium"
+              >
+                ← Quay lại Trang chủ
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {combinedHonorBoard.map((ach) => (
+                <div
+                  key={ach.id}
+                  className="bg-gradient-to-br from-[#1B3B48] to-[#2C4A3E] text-white rounded-2xl p-5 shadow-md flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-2xl">{ach.badge}</span>
+                      <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-white/10 text-[#E9C46A]">
+                        {ach.classId || `Khối ${ach.grade}`}
+                      </span>
+                    </div>
+                    <h4 className="font-serif font-bold text-lg text-[#E9C46A]">
+                      {ach.studentName}
+                    </h4>
+                    <p className="text-xs font-semibold text-white mt-1">{ach.title}</p>
+                    <p className="text-[11px] text-stone-300 mt-2">{ach.note}</p>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-white/15 flex items-center justify-between">
+                    <span className="text-xs font-mono text-emerald-300 font-bold">
+                      Điểm: {ach.score}
+                    </span>
+                    {userRole === "teacher" && !String(ach.id).startsWith("AUTO-") && (
+                      <button
+                        onClick={() => handleDeleteAchievement(ach.id)}
+                        className="text-[10px] text-red-300 hover:text-red-100"
+                      >
+                        Xóa
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* MỤC 08: GÓC HỌC TẬP & TRA CỨU DANH PHÁP IUPAC                */}
+        {/* ============================================================ */}
+        {activeView === "chem_tools" && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E5E0D8] pb-4">
+              <div>
+                <span className="text-xs font-mono uppercase tracking-widest text-[#9C6644] block mb-1">
+                  MỤC 08 // IUPAC REFERENCE TABLES & STUDY TOOLS
+                </span>
+                <h2 className="text-2xl font-serif font-bold text-[#1B3B48]">
+                  Góc Học Tập, Bảng Tra Cứu Danh Pháp Quốc Tế IUPAC & Flashcards
+                </h2>
+              </div>
+              <button
+                onClick={() => setActiveView("home")}
+                className="text-sm text-[#5C7667] hover:text-[#1B3B48] font-medium"
+              >
+                ← Quay lại Trang chủ
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {[
+                ["fatty_acids", "🧪 Acid béo & Ester"],
+                ["amino_acids", "🧬 Amino acid & Peptide"],
+                ["indicators", "🌈 Chất chỉ thị pH"],
+                ["lab_equip", "🔬 Dụng cụ thí nghiệm"],
+                ["chem_notes", "📌 Ghi chú Hóa học"],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setSelectedRefTab(key as any)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    selectedRefTab === key
+                      ? "bg-[#1B3B48] text-white"
+                      : "bg-[#EFECE6] text-[#1B3B48] hover:bg-[#E5E0D8]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="bg-white rounded-2xl p-6 border border-[#E5E0D8] shadow-sm overflow-x-auto">
+              {selectedRefTab === "fatty_acids" && (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#1B3B48] text-white font-mono uppercase">
+                      <th className="p-3">Công thức</th>
+                      <th className="p-3">Công thức khung</th>
+                      <th className="p-3">Tên thông thường</th>
+                      <th className="p-3">Danh pháp IUPAC</th>
+                      <th className="p-3">M (g/mol)</th>
+                      <th className="p-3">Trạng thái & Triglyceride</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E5E0D8]">
+                    {FATTY_ACIDS_TABLE.map((r, i) => (
+                      <tr key={i} className="hover:bg-stone-50">
+                        <td className="p-3 font-mono font-bold text-[#1B3B48]">{r.formula}</td>
+                        <td className="p-3 font-mono text-stone-600">{r.condensed}</td>
+                        <td className="p-3 font-semibold">{r.commonName}</td>
+                        <td className="p-3 font-bold text-[#2C4A3E]">{r.iupacName}</td>
+                        <td className="p-3 font-mono">{r.molarMass}</td>
+                        <td className="p-3 text-stone-600">
+                          {r.type} — {r.triglyceride} (M = {r.triglycerideM})
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {selectedRefTab === "amino_acids" && (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#1B3B48] text-white font-mono uppercase">
+                      <th className="p-3">Ký hiệu</th>
+                      <th className="p-3">Tên thường (IUPAC)</th>
+                      <th className="p-3">Tên thay thế IUPAC</th>
+                      <th className="p-3">Công thức cấu tạo</th>
+                      <th className="p-3">M (g/mol)</th>
+                      <th className="p-3">Môi trường & Quỳ tím</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E5E0D8]">
+                    {AMINO_ACIDS_TABLE.map((r, i) => (
+                      <tr key={i} className="hover:bg-stone-50">
+                        <td className="p-3 font-mono font-bold text-[#9C6644]">{r.symbol}</td>
+                        <td className="p-3 font-bold text-[#1B3B48]">{r.commonName}</td>
+                        <td className="p-3 text-[#2C4A3E] font-medium">{r.iupacName}</td>
+                        <td className="p-3 font-mono">{r.formula}</td>
+                        <td className="p-3 font-mono font-bold">{r.molarMass}</td>
+                        <td className="p-3 text-stone-600">{r.litmus}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {selectedRefTab === "indicators" && (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#1B3B48] text-white font-mono uppercase">
+                      <th className="p-3">Chất chỉ thị</th>
+                      <th className="p-3">Môi trường Acid</th>
+                      <th className="p-3">Trung tính</th>
+                      <th className="p-3">Môi trường Base</th>
+                      <th className="p-3">Ghi chú khoảng đổi màu</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E5E0D8]">
+                    {PH_INDICATORS_TABLE.map((r, i) => (
+                      <tr key={i} className="hover:bg-stone-50">
+                        <td className="p-3 font-bold text-[#1B3B48]">{r.indicator}</td>
+                        <td className="p-3 text-red-600 font-semibold">{r.acidEnv}</td>
+                        <td className="p-3 text-stone-600">{r.neutralEnv}</td>
+                        <td className="p-3 text-blue-600 font-semibold">{r.baseEnv}</td>
+                        <td className="p-3 text-stone-500">{r.note}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {selectedRefTab === "lab_equip" && (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#1B3B48] text-white font-mono uppercase">
+                      <th className="p-3">Tên dụng cụ</th>
+                      <th className="p-3">Phân loại</th>
+                      <th className="p-3">Công dụng chính</th>
+                      <th className="p-3">Lưu ý an toàn & Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E5E0D8]">
+                    {LAB_EQUIPMENT_TABLE.map((r, i) => (
+                      <tr key={i} className="hover:bg-stone-50">
+                        <td className="p-3 font-bold text-[#1B3B48]">{r.name}</td>
+                        <td className="p-3 text-[#9C6644] font-semibold">{r.category}</td>
+                        <td className="p-3 text-stone-700">{r.usage}</td>
+                        <td className="p-3 text-stone-500">{r.caution}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {selectedRefTab === "chem_notes" && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {CHEM_REFERENCE_NOTES.map((n, i) => (
+                    <div key={i} className="p-4 rounded-xl bg-[#F7F6F2] border border-[#E5E0D8]">
+                      <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-[#1B3B48] text-[#E9C46A]">
+                        {n.category}
+                      </span>
+                      <h4 className="font-serif font-bold text-[#1B3B48] text-sm mt-2 mb-1">
+                        {n.title}
+                      </h4>
+                      <p className="text-xs text-stone-700 leading-relaxed mb-2">{n.content}</p>
+                      <p className="text-[11px] font-mono text-[#2C4A3E] bg-white p-2 rounded border border-stone-200">
+                        💡 {n.example}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* MỤC 09: QUẢN LÝ LỚP HỌC & DANH SÁCH HỌC SINH (CÓ SỬA LỚP/HS) */}
+        {/* ============================================================ */}
+        {activeView === "students_admin" && userRole === "teacher" && (
+          <div className="space-y-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E5E0D8] pb-4">
+              <div>
+                <span className="text-xs font-mono uppercase tracking-widest text-[#9C6644] block mb-1">
+                  MỤC 09 // CLASSROOM & STUDENT ROSTER ADMINISTRATION
+                </span>
+                <h2 className="text-2xl font-serif font-bold text-[#1B3B48]">
+                  Quản lý Các Lớp Học, Sửa Lớp & Chỉnh sửa Danh sách Học Sinh
+                </h2>
+              </div>
+              <button
+                onClick={() => setActiveView("home")}
+                className="text-sm text-[#5C7667] hover:text-[#1B3B48] font-medium"
+              >
+                ← Quay lại Trang chủ
+              </button>
+            </div>
+
+            {/* PHẦN 1: TẠO LỚP MỚI & DANH SÁCH CÁC LỚP (CÓ NÚT SỬA LỚP SAU KHI TẠO) */}
+            <div className="bg-white rounded-2xl p-6 border border-[#E5E0D8] shadow-sm space-y-5">
+              <h3 className="font-serif font-bold text-lg text-[#1B3B48]">
+                🏫 1. Quản lý Danh sách Lớp Học ({classesList.length} lớp) — Cho phép Sửa Lớp sau khi tạo
               </h3>
 
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!newClassForm.id.trim() || !newClassForm.name.trim())
-                    return;
-                  const cid = newClassForm.id.trim().toUpperCase();
-                  if (appData.classes.some((c) => c.id === cid)) {
-                    notify("Mã lớp này đã tồn tại!", "warn");
-                    return;
-                  }
-                  saveToAll({
-                    ...appData,
-                    classes: [
-                      ...appData.classes,
-                      {
-                        id: cid,
-                        isUserCreated: true,
-                        name: newClassForm.name.trim(),
-                        grade: newClassForm.grade,
-                        academicYear:
-                          newClassForm.academicYear ||
-                          appData.currentAcademicYear ||
-                          "2026 - 2027",
-                        scheduleSummary:
-                          newClassForm.scheduleSummary.trim() ||
-                          "Đang cập nhật",
-                        todayDocIds: [],
-                      },
-                    ],
-                  });
-                  setNewClassForm({
-                    id: "",
-                    name: "",
-                    grade: "10",
-                    academicYear:
-                      appData.currentAcademicYear || "2026 - 2027",
-                    scheduleSummary: "",
-                  });
-                  notify(`Đã tạo Lớp ${cid}!`, "success");
-                }}
-                className="grid grid-cols-1 sm:grid-cols-6 gap-3"
-              >
+              <form onSubmit={handleAddClass} className="grid grid-cols-1 md:grid-cols-6 gap-3 bg-[#EFECE6] p-4 rounded-xl text-xs">
                 <input
                   type="text"
                   required
+                  placeholder="Mã lớp (VD: 12H1)"
                   value={newClassForm.id}
-                  onChange={(e) =>
-                    setNewClassForm({ ...newClassForm, id: e.target.value })
-                  }
-                  placeholder="Mã lớp (VD: 12TA1_ĐH)"
-                  className="p-2.5 rounded-xl border text-xs"
+                  onChange={(e) => setNewClassForm({ ...newClassForm, id: e.target.value })}
+                  className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-mono font-bold uppercase"
                 />
                 <input
                   type="text"
                   required
+                  placeholder="Tên lớp (VD: Lớp 12H1 - Mục tiêu 9+)"
                   value={newClassForm.name}
-                  onChange={(e) =>
-                    setNewClassForm({ ...newClassForm, name: e.target.value })
-                  }
-                  placeholder="Tên lớp (VD: Luyện thi Đại Học)"
-                  className="p-2.5 rounded-xl border text-xs"
+                  onChange={(e) => setNewClassForm({ ...newClassForm, name: e.target.value })}
+                  className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white md:col-span-2"
                 />
                 <select
                   value={newClassForm.grade}
                   onChange={(e) =>
-                    setNewClassForm({ ...newClassForm, grade: e.target.value })
-                  }
-                  className="p-2.5 rounded-xl border text-xs bg-white font-bold"
-                >
-                  <option value="10">Khối 10</option>
-                  <option value="11">Khối 11</option>
-                  <option value="12">Khối 12</option>
-                </select>
-                <select
-                  value={newClassForm.academicYear}
-                  onChange={(e) =>
                     setNewClassForm({
                       ...newClassForm,
-                      academicYear: e.target.value,
+                      grade: Number(e.target.value) as 10 | 11 | 12,
                     })
                   }
-                  className="p-2.5 rounded-xl border text-xs bg-white font-bold"
+                  className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold"
                 >
-                  {(appData.academicYears || DEFAULT_ACADEMIC_YEARS).map(
-                    (y) => (
-                      <option key={y} value={y}>
-                        Năm học {y}
-                      </option>
-                    )
-                  )}
+                  <option value={10}>Khối 10</option>
+                  <option value={11}>Khối 11</option>
+                  <option value={12}>Khối 12</option>
                 </select>
                 <input
                   type="text"
+                  placeholder="Lịch học tóm tắt (VD: T2, T4, T6 - 19h45)"
                   value={newClassForm.scheduleSummary}
                   onChange={(e) =>
-                    setNewClassForm({
-                      ...newClassForm,
-                      scheduleSummary: e.target.value,
-                    })
+                    setNewClassForm({ ...newClassForm, scheduleSummary: e.target.value })
                   }
-                  placeholder="Ca học (VD: 21:00 - 22:00)"
-                  className="p-2.5 rounded-xl border text-xs"
+                  className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
                 />
                 <button
                   type="submit"
-                  className="bg-[#1B3B48] text-white rounded-xl text-xs font-bold px-4 py-2.5"
+                  className="px-4 py-2 rounded-lg bg-[#1B3B48] text-white font-bold hover:bg-[#2C4A3E]"
                 >
                   + Tạo Lớp Mới
                 </button>
               </form>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
-                {yearFilteredClasses.map((cls) => {
-                  const classStudentCount = getStudentsOfClass(cls.id).length;
-                  const todayMaterials = getTodayMaterialsForClass(cls);
-
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {classesList.map((cls) => {
+                  const classStuCount = students.filter((s) => s.classId === cls.id).length;
                   return (
                     <div
                       key={cls.id}
-                      className="p-4 rounded-2xl bg-[#F7F6F2] border border-[#E2DFD7] flex flex-col justify-between gap-3 shadow-sm"
+                      className="p-4 rounded-xl border border-[#D5CFC4] bg-[#F7F6F2] flex flex-col justify-between"
                     >
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="px-2.5 py-1 rounded-lg bg-[#1B3B48] text-white text-xs font-bold">
-                            Lớp {cls.id} (Khối {cls.grade})
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded bg-[#1B3B48] text-[#E9C46A]">
+                            {cls.id} • Khối {cls.grade}
                           </span>
-                          <span className="px-2.5 py-1 rounded-full bg-[#2C4A3E] text-white text-xs font-extrabold">
-                            Sĩ số: {classStudentCount} HS
+                          <span className="text-xs font-mono text-stone-500">
+                            NH: {cls.academicYear || selectedAcademicYear}
                           </span>
                         </div>
-                        <div className="text-[11px] font-bold text-[#5C7667]">
-                          📅 Năm học:{" "}
-                          {cls.academicYear ||
-                            appData.currentAcademicYear ||
-                            "2026 - 2027"}
-                        </div>
-                        <h4 className="font-bold text-base text-[#1B3B48]">
+                        <h4 className="font-serif font-bold text-[#1B3B48] text-base">
                           {cls.name}
                         </h4>
-                        <p className="text-xs text-[#5C7667]">
-                          🕒 Lịch học: {cls.scheduleSummary}
+                        <p className="text-xs text-stone-600 mt-1">
+                          ⏰ {cls.scheduleSummary} • Sĩ số: <b>{classStuCount}</b> HS
                         </p>
-
-                        {/* Đính kèm tài liệu học hôm đó trong lớp */}
-                        <div className="p-2.5 rounded-xl bg-white border border-[#E2DFD7] space-y-1 mt-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-[#1B3B48]">
-                              📎 Tài liệu học hôm nay ({todayMaterials.length}):
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setEditingClassDocsModal({
-                                  ...cls,
-                                  todayDocIds: cls.todayDocIds || [],
-                                  todayCustomDocTitle:
-                                    cls.todayCustomDocTitle || "",
-                                  todayCustomDocUrl:
-                                    cls.todayCustomDocUrl || "",
-                                })
-                              }
-                              className="text-[10px] font-bold text-[#5C7667] underline"
-                            >
-                              + Đính kèm TL
-                            </button>
-                          </div>
-                          {todayMaterials.map((m) => (
-                            <div
-                              key={m.id}
-                              className="text-[11px] text-[#2C4A3E] font-semibold truncate"
-                            >
-                              • {m.title}
-                            </div>
-                          ))}
-                        </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-[#E2DFD7]">
+                      <div className="mt-4 pt-3 border-t border-[#E5E0D8] flex flex-wrap items-center justify-between gap-1.5">
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            onClick={() => openQuickAttendance(cls)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-700 text-white text-[11px] font-bold hover:bg-emerald-800"
+                          >
+                            ✓ Điểm danh
+                          </button>
+                          <button
+                            onClick={() =>
+                              setEditingClassModal({
+                                originalId: cls.id,
+                                id: cls.id,
+                                name: cls.name,
+                                grade: cls.grade,
+                                academicYear: cls.academicYear || selectedAcademicYear,
+                                scheduleSummary: cls.scheduleSummary,
+                              })
+                            }
+                            className="px-2.5 py-1 rounded-lg bg-[#E9C46A] text-[#1B3B48] text-[11px] font-bold hover:bg-[#f0d182]"
+                          >
+                            ✎ Sửa lớp
+                          </button>
+                        </div>
                         <button
-                          onClick={() => openQuickAttendance(cls)}
-                          className="bg-[#5C7667] hover:bg-[#4A6154] text-white px-3 py-1.5 rounded-lg text-xs font-bold"
-                        >
-                          ✓ Điểm danh & TL buổi học
-                        </button>
-                        <button
-                          onClick={() => handleDeleteClass(cls)}
-                          className="bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 px-2.5 py-1.5 rounded-lg text-xs font-bold"
+                          onClick={() => handleDeleteClass(cls.id)}
+                          className="px-2 py-1 rounded-lg bg-red-50 text-red-600 text-[11px] font-semibold hover:bg-red-100"
                         >
                           Xóa lớp
                         </button>
@@ -10406,989 +8361,1029 @@ Email: ${TEACHER_INFO.email}`;
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <form
-                onSubmit={handleBulkExcelImport}
-                className="bg-white p-6 rounded-2xl border border-[#E2DFD7] space-y-3"
-              >
-                <h3 className="font-bold text-base text-[#1B3B48]">
-                  2. Tạo Tài khoản Hàng loạt từ Excel (Gán vào Năm học đang chọn)
+            {/* PHẦN 2: THÊM HỌC SINH & DANH SÁCH HỌC SINH (CÓ NÚT SỬA HỌC SINH SAU KHI TẠO) */}
+            <div className="bg-white rounded-2xl p-6 border border-[#E5E0D8] shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <h3 className="font-serif font-bold text-lg text-[#1B3B48]">
+                  👨‍🎓 2. Danh sách Học Sinh ({students.length} HS) — Cho phép Sửa Thông tin HS sau khi tạo
                 </h3>
-                <textarea
-                  rows={5}
-                  required
-                  value={excelBulkText}
-                  onChange={(e) => setExcelBulkText(e.target.value)}
-                  placeholder={
-                    "Nguyễn Minh Khôi\t10A1\tkhoi.nm@gmail.com\t123456\tĐH Y Dược TP.HCM"
-                  }
-                  className="w-full p-3 rounded-xl border text-xs font-mono"
-                />
                 <button
-                  type="submit"
-                  className="w-full bg-[#1B3B48] text-white py-2.5 rounded-xl text-xs font-bold"
+                  onClick={() => setShowBulkImportBox(!showBulkImportBox)}
+                  className="px-3.5 py-2 rounded-xl bg-[#2C4A3E] text-white text-xs font-bold hover:bg-[#1B3B48]"
                 >
-                  Tạo Tài khoản Hàng loạt
+                  📋 Nhập nhanh danh sách từ Excel / Google Sheets
                 </button>
-              </form>
+              </div>
 
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!singleStudent.name.trim()) return;
-
-                  // Xác định Mã lớp chuẩn xác từ danh sách lớp hiện tại hoặc mã lớp người dùng nhập
-                  const rawTargetClass = (
-                    singleStudent.classId ||
-                    appData.classes[0]?.id ||
-                    ""
-                  )
-                    .trim()
-                    .toUpperCase();
-
-                  if (!rawTargetClass) {
-                    notify(
-                      "Bạn chưa có lớp học nào! Hãy tạo ít nhất 1 Lớp học ở mục 1 phía trên trước khi thêm học sinh.",
-                      "warn"
-                    );
-                    return;
-                  }
-
-                  let nextClasses = [...(appData.classes || [])];
-                  let clsObj = nextClasses.find((c) =>
-                    isSameClass(c.id, rawTargetClass)
-                  );
-                  const activeYear =
-                    selectedAcademicYear === "ALL"
-                      ? appData.currentAcademicYear || "2026 - 2027"
-                      : selectedAcademicYear;
-
-                  // Nếu mã lớp chưa tồn tại trong danh sách lớp thì tự động khởi tạo lớp đó luôn để sĩ số luôn khớp 100%
-                  if (!clsObj) {
-                    let detectedGrade = "12";
-                    if (rawTargetClass.startsWith("10")) detectedGrade = "10";
-                    else if (rawTargetClass.startsWith("11"))
-                      detectedGrade = "11";
-                    clsObj = {
-                      id: rawTargetClass,
-                      isUserCreated: true,
-                      name: `Lớp Hóa ${rawTargetClass}`,
-                      grade: detectedGrade,
-                      academicYear: activeYear,
-                      scheduleSummary: "Theo Thời khóa biểu",
-                      todayDocIds: [],
-                    };
-                    nextClasses.push(clsObj);
-                  }
-
-                  const canonicalClassId = clsObj.id;
-                  const gradeStr = clsObj.grade || "12";
-                  const generatedEmail =
-                    singleStudent.email.trim() ||
-                    `${singleStudent.name
-                      .trim()
-                      .toLowerCase()
-                      .replace(/\s+/g, "")}@gmail.com`;
-
-                  const newSt = {
-                    id:
-                      "HS" +
-                      Date.now().toString().slice(-4) +
-                      Math.floor(10 + Math.random() * 89),
-                    name: singleStudent.name.trim(),
-                    classId: canonicalClassId,
-                    grade: gradeStr,
-                    academicYear: clsObj.academicYear || activeYear,
-                    email: generatedEmail,
-                    password: singleStudent.password.trim() || "123456",
-                    targetScore: singleStudent.targetScore || "8.5+",
-                    universityGoal: singleStudent.universityGoal.trim(),
-                    personalAchievements: "",
-                    score: 0,
-                    attendanceRate: 100,
-                    attendanceNote: "Đi học đầy đủ",
-                    attitude: "Tập trung chú ý bài giảng",
-                    teacherComment: "Đã khởi tạo hồ sơ học tập trực tuyến.",
-                    roadmapProgress: createDefaultRoadmap(gradeStr),
-                    inClassTests: [],
-                    scoreHistory: [],
-                    attendanceHistory: [],
-                  };
-
-                  const nextStudents = [...(appData.students || []), newSt];
-                  saveToAll({
-                    ...appData,
-                    classes: nextClasses,
-                    students: nextStudents,
-                  });
-                  setSelectedStudentId(newSt.id);
-                  setSingleStudent({
-                    name: "",
-                    classId: canonicalClassId,
-                    email: "",
-                    password: "",
-                    targetScore: "8.5+",
-                    universityGoal: "",
-                  });
-                  const updatedCount = getStudentsOfClass(
-                    canonicalClassId,
-                    nextStudents
-                  ).length;
-                  notify(
-                    `✅ Đã thêm HS ${newSt.name} vào Lớp ${canonicalClassId}! Sĩ số Lớp ${canonicalClassId} hiện tại: ${updatedCount} học sinh.`,
-                    "success"
-                  );
-                }}
-                className="bg-white p-6 rounded-2xl border border-[#E2DFD7] space-y-3"
-              >
-                <h3 className="font-bold text-base text-[#1B3B48]">
-                  3. Thêm Từng Học sinh vào Lớp (Tự động cập nhật Sĩ số & Hồ sơ)
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    required
-                    value={singleStudent.name}
-                    onChange={(e) =>
-                      setSingleStudent({
-                        ...singleStudent,
-                        name: e.target.value,
-                      })
-                    }
-                    placeholder="Họ và tên học sinh..."
-                    className="p-2.5 rounded-xl border text-xs"
-                  />
-
-                  {appData.classes.length > 0 ? (
+              {showBulkImportBox && (
+                <form onSubmit={handleBulkExcelImport} className="bg-[#EFECE6] p-4 rounded-xl border border-[#D5CFC4] space-y-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold text-[#1B3B48]">
+                      Dán dữ liệu từ Excel (Mỗi dòng: Họ tên [Tab/Phẩy] Email [Tab/Phẩy] Mật khẩu [Tab/Phẩy] Mục tiêu):
+                    </span>
                     <select
-                      value={
-                        appData.classes.some((c) =>
-                          isSameClass(c.id, singleStudent.classId)
-                        )
-                          ? singleStudent.classId
-                          : appData.classes[0]?.id || ""
-                      }
-                      onChange={(e) =>
-                        setSingleStudent({
-                          ...singleStudent,
-                          classId: e.target.value,
-                        })
-                      }
-                      className="p-2.5 rounded-xl border-2 border-[#1B3B48] text-xs bg-[#F7F6F2] font-bold text-[#1B3B48]"
+                      value={bulkImportClassId}
+                      onChange={(e) => setBulkImportClassId(e.target.value)}
+                      className="px-3 py-1.5 rounded-lg border border-[#D5CFC4] bg-white font-bold"
                     >
-                      {appData.classes.map((c) => (
+                      {classesList.map((c) => (
                         <option key={c.id} value={c.id}>
-                          Chọn Lớp: {c.id} ({c.name} • Sĩ số:{" "}
-                          {getStudentsOfClass(c.id).length} HS)
+                          Nhập vào Lớp {c.id} ({c.name})
                         </option>
                       ))}
                     </select>
-                  ) : (
-                    <input
-                      type="text"
-                      required
-                      value={singleStudent.classId}
-                      onChange={(e) =>
-                        setSingleStudent({
-                          ...singleStudent,
-                          classId: e.target.value.toUpperCase(),
-                        })
-                      }
-                      placeholder="Nhập Mã lớp (VD: 10A1, 12A1)..."
-                      className="p-2.5 rounded-xl border-2 border-[#9C6644] text-xs font-bold"
-                    />
-                  )}
+                  </div>
+                  <textarea
+                    rows={4}
+                    placeholder={"Nguyễn Văn A\\tnguyenvana@gmail.com\\t123456\\tĐH Y Dược TP.HCM\\nTrần Thị B\\ttranthib@gmail.com\\t123456\\tĐH Bách Khoa"}
+                    value={bulkImportText}
+                    onChange={(e) => setBulkImportText(e.target.value)}
+                    className="w-full p-3 rounded-lg border border-[#D5CFC4] bg-white font-mono"
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-lg bg-[#1B3B48] text-white font-bold"
+                  >
+                    ✓ Thực hiện Nhập Hàng Loạt
+                  </button>
+                </form>
+              )}
 
-                  <input
-                    type="email"
-                    value={singleStudent.email}
-                    onChange={(e) =>
-                      setSingleStudent({
-                        ...singleStudent,
-                        email: e.target.value,
-                      })
-                    }
-                    placeholder="Email đăng nhập (Có thể để trống hệ thống tự tạo)"
-                    className="p-2.5 rounded-xl border text-xs"
-                  />
-                  <input
-                    type="text"
-                    value={singleStudent.password}
-                    onChange={(e) =>
-                      setSingleStudent({
-                        ...singleStudent,
-                        password: e.target.value,
-                      })
-                    }
-                    placeholder="Mật khẩu (Mặc định: 123456)"
-                    className="p-2.5 rounded-xl border text-xs"
-                  />
-                </div>
+              {/* Form thêm 1 học sinh */}
+              <form onSubmit={handleAddStudentAccount} className="grid grid-cols-1 md:grid-cols-6 gap-3 bg-[#F7F6F2] p-4 rounded-xl border border-[#E5E0D8] text-xs">
+                <input
+                  type="text"
+                  required
+                  placeholder="Họ và tên Học sinh..."
+                  value={newStudentForm.name}
+                  onChange={(e) => setNewStudentForm({ ...newStudentForm, name: e.target.value })}
+                  className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-semibold"
+                />
+                <select
+                  value={newStudentForm.classId}
+                  onChange={(e) => {
+                    const cid = e.target.value;
+                    const found = classesList.find((c) => c.id === cid);
+                    setNewStudentForm({
+                      ...newStudentForm,
+                      classId: cid,
+                      grade: found ? found.grade : newStudentForm.grade,
+                    });
+                  }}
+                  className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold text-[#1B3B48]"
+                >
+                  {classesList.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      Lớp {c.id} (Khối {c.grade})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="email"
+                  required
+                  placeholder="Email đăng nhập..."
+                  value={newStudentForm.email}
+                  onChange={(e) => setNewStudentForm({ ...newStudentForm, email: e.target.value })}
+                  className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                />
+                <input
+                  type="text"
+                  required
+                  placeholder="Mật khẩu..."
+                  value={newStudentForm.password}
+                  onChange={(e) =>
+                    setNewStudentForm({ ...newStudentForm, password: e.target.value })
+                  }
+                  className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-mono"
+                />
+                <input
+                  type="text"
+                  placeholder="Trường ĐH mục tiêu..."
+                  value={newStudentForm.universityGoal}
+                  onChange={(e) =>
+                    setNewStudentForm({ ...newStudentForm, universityGoal: e.target.value })
+                  }
+                  className="px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                />
                 <button
                   type="submit"
-                  className="w-full bg-[#5C7667] hover:bg-[#2C4A3E] text-white py-2.5 rounded-xl text-xs font-bold transition shadow-sm"
+                  className="px-4 py-2 rounded-lg bg-[#1B3B48] text-white font-bold hover:bg-[#2C4A3E]"
                 >
-                  + Thêm Học sinh vào Lớp
+                  + Cấp Tài Khoản HS
                 </button>
               </form>
+
+              {/* Bảng danh sách học sinh */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#1B3B48] text-white font-mono uppercase">
+                      <th className="p-3">Mã HS</th>
+                      <th className="p-3">Họ và tên</th>
+                      <th className="p-3">Lớp / Khối</th>
+                      <th className="p-3">Email & Mật khẩu</th>
+                      <th className="p-3">ĐTB & Chuyên cần</th>
+                      <th className="p-3">Mục tiêu</th>
+                      <th className="p-3 text-right">Thao tác (Sửa / Xóa)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E5E0D8]">
+                    {students.map((st) => (
+                      <tr key={st.id} className="hover:bg-stone-50">
+                        <td className="p-3 font-mono font-bold text-[#9C6644]">{st.id}</td>
+                        <td className="p-3 font-bold text-[#1B3B48]">{st.name}</td>
+                        <td className="p-3">
+                          <span className="px-2 py-0.5 rounded bg-[#EFECE6] text-[#1B3B48] font-mono font-bold">
+                            {st.classId} (K{st.grade})
+                          </span>
+                        </td>
+                        <td className="p-3 font-mono text-stone-600">
+                          <div>{st.email}</div>
+                          <div className="text-[10px] text-stone-400">MK: {st.password}</div>
+                        </td>
+                        <td className="p-3">
+                          <span className="font-bold text-[#1B3B48]">{st.score} đ</span> •{" "}
+                          <span className="text-emerald-700 font-semibold">
+                            {st.attendanceRate}%
+                          </span>
+                        </td>
+                        <td className="p-3 text-stone-600">
+                          {st.universityGoal} ({st.targetScore}+)
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              onClick={() => setEditingStudentModal({ ...st, originalId: st.id })}
+                              className="px-2.5 py-1 rounded bg-[#E9C46A] text-[#1B3B48] font-bold hover:bg-[#f0d182]"
+                            >
+                              ✎ Sửa HS
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedStudentId(st.id);
+                                setActiveView("progress");
+                              }}
+                              className="px-2.5 py-1 rounded bg-[#EFECE6] text-[#1B3B48] font-semibold hover:bg-[#E5E0D8]"
+                            >
+                              Hồ sơ
+                            </button>
+                            <button
+                              onClick={() => handleDeleteStudent(st.id)}
+                              className="px-2 py-1 rounded bg-red-50 text-red-600 font-semibold hover:bg-red-100"
+                            >
+                              Xóa
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* MỤC 10: GÓC HÓA HỌC MỖI NGÀY (CHEM FEED & ĐỐ VUI)            */}
+        {/* ============================================================ */}
+        {activeView === "chem_feed" && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E5E0D8] pb-4">
+              <div>
+                <span className="text-xs font-mono uppercase tracking-widest text-[#9C6644] block mb-1">
+                  MỤC 10 // DAILY CHEMISTRY STORIES & INTERACTIVE QUIZ
+                </span>
+                <h2 className="text-2xl font-serif font-bold text-[#1B3B48]">
+                  Góc Hóa Học Mỗi Ngày: Câu Chuyện Thực Tiễn, Đố Vui & Hỏi Đáp Tích Điểm
+                </h2>
+              </div>
+              <button
+                onClick={() => setActiveView("home")}
+                className="text-sm text-[#5C7667] hover:text-[#1B3B48] font-medium"
+              >
+                ← Quay lại Trang chủ
+              </button>
             </div>
 
-            {/* ===================================================================
-                Ô XEM DANH SÁCH HỌC SINH CÁC LỚP ĐÃ CẬP NHẬT (SĨ SỐ, ĐỔI LỚP, XÓA HS)
-            =================================================================== */}
-            <div className="bg-white p-6 rounded-2xl border-2 border-[#1B3B48] space-y-4 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EFECE6] pb-4">
-                <div>
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#1B3B48] text-[#E9C46A] text-xs font-extrabold uppercase">
-                    👥 Danh sách Học sinh đã cập nhật
-                  </span>
-                  <h3 className="font-extrabold text-lg text-[#1B3B48] mt-1">
-                    4. Bảng Danh Sách Học Sinh Theo Từng Lớp ({appData.students.length} Học sinh)
-                  </h3>
-                  <p className="text-xs text-[#5C7667]">
-                    Xem chi tiết danh sách học sinh của từng lớp, kiểm tra tài khoản/mật khẩu, đổi lớp nhanh hoặc mở hồ sơ học tập.
+            <div className="space-y-4">
+              {chemFeedPosts.map((post) => (
+                <div
+                  key={post.id}
+                  className="bg-white rounded-2xl p-6 border border-[#E5E0D8] shadow-sm space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold px-2.5 py-1 rounded bg-[#1B3B48] text-[#E9C46A]">
+                      {post.authorName} • Khối {post.grade}
+                    </span>
+                    <span className="text-xs font-mono text-stone-400">{post.createdAt}</span>
+                  </div>
+                  <h3 className="text-lg font-serif font-bold text-[#1B3B48]">{post.title}</h3>
+                  <p className="text-xs text-stone-700 whitespace-pre-line leading-relaxed">
+                    {post.content}
                   </p>
                 </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    type="text"
-                    value={rosterSearchQuery}
-                    onChange={(e) => setRosterSearchQuery(e.target.value)}
-                    placeholder="🔍 Tìm tên, mã HS hoặc email..."
-                    className="p-2 rounded-xl border text-xs bg-[#F7F6F2] w-52"
-                  />
-                </div>
-              </div>
-
-              {/* Thanh chọn Lớp kèm Sĩ số trực tiếp */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRosterFilterClass("ALL")}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
-                    rosterFilterClass === "ALL"
-                      ? "bg-[#1B3B48] text-[#E9C46A]"
-                      : "bg-[#EFECE6] text-[#1B3B48] hover:bg-[#E2DFD7]"
-                  }`}
-                >
-                  Tất cả các lớp ({appData.students.length} HS)
-                </button>
-                {appData.classes.map((cls) => {
-                  const cnt = getStudentsOfClass(cls.id).length;
-                  return (
-                    <button
-                      key={cls.id}
-                      type="button"
-                      onClick={() => setRosterFilterClass(cls.id)}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
-                        isSameClass(rosterFilterClass, cls.id)
-                          ? "bg-[#1B3B48] text-[#E9C46A]"
-                          : "bg-[#EFECE6] text-[#1B3B48] hover:bg-[#E2DFD7]"
-                      }`}
-                    >
-                      Lớp {cls.id} — Sĩ số: {cnt} HS
-                    </button>
-                  );
-                })}
-              </div>
-
-              {appData.students.length === 0 ? (
-                <div className="p-8 rounded-2xl bg-[#F7F6F2] border border-dashed border-[#DFDBD0] text-center text-xs text-[#5C7667]">
-                  Chưa có học sinh nào trong hệ thống. Bạn hãy thêm học sinh ở mục 2 hoặc mục 3 phía trên để danh sách tự động hiển thị tại đây.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="bg-[#1B3B48] text-white">
-                        <th className="p-3 border">STT</th>
-                        <th className="p-3 border">Mã HS</th>
-                        <th className="p-3 border">Họ và tên Học sinh</th>
-                        <th className="p-3 border">Lớp học (Đổi lớp)</th>
-                        <th className="p-3 border">Năm học</th>
-                        <th className="p-3 border">Tài khoản Email</th>
-                        <th className="p-3 border">Mật khẩu</th>
-                        <th className="p-3 border">Điểm TB / Chuyên cần</th>
-                        <th className="p-3 border text-center">Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#E2DFD7]">
-                      {appData.students
-                        .filter((st) => {
-                          if (
-                            rosterFilterClass !== "ALL" &&
-                            !isSameClass(st.classId, rosterFilterClass)
-                          ) {
-                            return false;
-                          }
-                          if (rosterSearchQuery.trim()) {
-                            const q = rosterSearchQuery.trim().toLowerCase();
-                            const matchName = (st.name || "")
-                              .toLowerCase()
-                              .includes(q);
-                            const matchId = (st.id || "")
-                              .toLowerCase()
-                              .includes(q);
-                            const matchEmail = (st.email || "")
-                              .toLowerCase()
-                              .includes(q);
-                            return matchName || matchId || matchEmail;
-                          }
-                          return true;
-                        })
-                        .map((st, idx) => {
-                          const subCount = (
-                            appData.homeworkSubmissions || []
-                          ).filter((sub) => sub.studentId === st.id).length;
-
-                          return (
-                            <tr
-                              key={st.id}
-                              className="hover:bg-[#F7F6F2] transition"
-                            >
-                              <td className="p-3 border font-bold text-[#5C7667]">
-                                {idx + 1}
-                              </td>
-                              <td className="p-3 border font-mono font-bold text-[#1B3B48]">
-                                {st.id}
-                              </td>
-                              <td className="p-3 border font-extrabold text-[#1B3B48]">
-                                {st.name}
-                              </td>
-                              <td className="p-3 border">
-                                <select
-                                  value={st.classId}
-                                  onChange={(e) => {
-                                    const newClsId = e.target.value;
-                                    const targetCls = appData.classes.find(
-                                      (c) => isSameClass(c.id, newClsId)
-                                    );
-                                    updateStudentField(st.id, {
-                                      classId: newClsId,
-                                      grade: targetCls?.grade || st.grade,
-                                    });
-                                    notify(
-                                      `Đã chuyển HS ${st.name} sang Lớp ${newClsId}!`,
-                                      "success"
-                                    );
-                                  }}
-                                  className="px-2 py-1 rounded-lg border bg-[#F7F6F2] font-bold text-[#1B3B48]"
-                                >
-                                  {!appData.classes.some((c) =>
-                                    isSameClass(c.id, st.classId)
-                                  ) && (
-                                    <option value={st.classId}>
-                                      Lớp {st.classId}
-                                    </option>
-                                  )}
-                                  {appData.classes.map((c) => (
-                                    <option key={c.id} value={c.id}>
-                                      Lớp {c.id}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="p-3 border font-semibold text-[#5C7667]">
-                                {st.academicYear ||
-                                  appData.currentAcademicYear ||
-                                  "2026 - 2027"}
-                              </td>
-                              <td className="p-3 border font-mono text-[#1B3B48]">
-                                {st.email}
-                              </td>
-                              <td className="p-3 border font-mono font-bold text-[#2C4A3E]">
-                                {st.password}
-                              </td>
-                              <td className="p-3 border">
-                                <div className="font-bold text-[#1B3B48]">
-                                  ĐTB: {st.score}/10 • CC: {st.attendanceRate}%
-                                </div>
-                                <div className="text-[11px] text-[#5C7667]">
-                                  Đã nộp: {subCount} BTVN
-                                </div>
-                              </td>
-                              <td className="p-3 border text-center">
-                                <div className="flex items-center justify-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedStudentId(st.id);
-                                      navigateTo("progress");
-                                    }}
-                                    className="px-2.5 py-1 rounded-lg bg-[#1B3B48] text-white font-bold"
-                                  >
-                                    Hồ sơ & Điểm
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      askConfirm(
-                                        `Bạn có chắc muốn xóa học sinh ${st.name} (${st.id}) khỏi Lớp ${st.classId}?`,
-                                        () => {
-                                          saveToAll({
-                                            ...appData,
-                                            students: appData.students.filter(
-                                              (x) => x.id !== st.id
-                                            ),
-                                          });
-                                          notify(
-                                            `Đã xóa học sinh ${st.name}.`,
-                                            "info"
-                                          );
-                                        }
-                                      )
-                                    }
-                                    className="px-2 py-1 rounded-lg bg-red-50 text-red-600 border border-red-200 font-bold"
-                                  >
-                                    Xóa
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              ))}
             </div>
           </div>
         )}
       </main>
 
-      {/* MODAL QUẢN LÝ NĂM HỌC */}
-      {showYearManagerModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-[#E2DFD7]">
-            <div className="flex items-center justify-between border-b pb-3">
+      {/* ============================================================== */}
+      {/* MODAL 1: SỬA THÔNG TIN LỚP HỌC SAU KHI TẠO (EDIT CLASS MODAL)  */}
+      {/* ============================================================== */}
+      {editingClassModal && userRole === "teacher" && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#F7F6F2] border border-[#D5CFC4] rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#E5E0D8] pb-3 mb-4">
+              <h3 className="font-serif font-bold text-lg text-[#1B3B48]">
+                ✎ Chỉnh sửa Thông tin Lớp Học ({editingClassModal.originalId})
+              </h3>
+              <button
+                onClick={() => setEditingClassModal(null)}
+                className="text-stone-400 hover:text-stone-700 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveEditedClass} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">
+                    Mã Lớp (Đổi mã sẽ tự động cập nhật sang HS & Lịch):
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingClassModal.id}
+                    onChange={(e) =>
+                      setEditingClassModal({ ...editingClassModal, id: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-mono font-bold uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Khối Lớp:</label>
+                  <select
+                    value={editingClassModal.grade}
+                    onChange={(e) =>
+                      setEditingClassModal({
+                        ...editingClassModal,
+                        grade: Number(e.target.value) as 10 | 11 | 12,
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold"
+                  >
+                    <option value={10}>Khối 10</option>
+                    <option value={11}>Khối 11</option>
+                    <option value={12}>Khối 12</option>
+                  </select>
+                </div>
+              </div>
+
               <div>
-                <h3 className="font-bold text-base text-[#1B3B48]">
-                  📅 Quản lý Danh mục Năm học
+                <label className="block font-bold text-stone-600 mb-1">Tên hiển thị của Lớp:</label>
+                <input
+                  type="text"
+                  required
+                  value={editingClassModal.name}
+                  onChange={(e) =>
+                    setEditingClassModal({ ...editingClassModal, name: e.target.value })
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-semibold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Năm học:</label>
+                  <select
+                    value={editingClassModal.academicYear}
+                    onChange={(e) =>
+                      setEditingClassModal({
+                        ...editingClassModal,
+                        academicYear: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                  >
+                    {academicYears.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Ca học cố định:</label>
+                  <input
+                    type="text"
+                    value={editingClassModal.scheduleSummary}
+                    onChange={(e) =>
+                      setEditingClassModal({
+                        ...editingClassModal,
+                        scheduleSummary: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-[#E5E0D8] flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingClassModal(null)}
+                  className="px-4 py-2 rounded-lg border border-[#D5CFC4] text-stone-600 font-semibold"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-lg bg-[#1B3B48] text-white font-bold hover:bg-[#2C4A3E]"
+                >
+                  ✓ Lưu Thay Đổi Lớp Học
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 2: SỬA THÔNG TIN HỌC SINH SAU KHI TẠO (EDIT STUDENT)     */}
+      {/* ============================================================== */}
+      {editingStudentModal && userRole === "teacher" && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#F7F6F2] border border-[#D5CFC4] rounded-2xl max-w-2xl w-full p-6 shadow-2xl my-8">
+            <div className="flex items-center justify-between border-b border-[#E5E0D8] pb-3 mb-4">
+              <h3 className="font-serif font-bold text-lg text-[#1B3B48]">
+                ✎ Chỉnh sửa Hồ sơ & Thông tin Học Sinh ({editingStudentModal.name})
+              </h3>
+              <button
+                onClick={() => setEditingStudentModal(null)}
+                className="text-stone-400 hover:text-stone-700 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveEditedStudent} className="space-y-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Mã Học Sinh:</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingStudentModal.id}
+                    onChange={(e) =>
+                      setEditingStudentModal({ ...editingStudentModal, id: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-mono font-bold uppercase"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-stone-600 mb-1">Họ và tên Học sinh:</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingStudentModal.name}
+                    onChange={(e) =>
+                      setEditingStudentModal({ ...editingStudentModal, name: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Lớp học:</label>
+                  <select
+                    value={editingStudentModal.classId}
+                    onChange={(e) => {
+                      const cid = e.target.value;
+                      const found = classesList.find((c) => c.id === cid);
+                      setEditingStudentModal({
+                        ...editingStudentModal,
+                        classId: cid,
+                        grade: found ? found.grade : editingStudentModal.grade,
+                      });
+                    }}
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold text-[#1B3B48]"
+                  >
+                    {classesList.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.id} - {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Khối:</label>
+                  <select
+                    value={editingStudentModal.grade}
+                    onChange={(e) =>
+                      setEditingStudentModal({
+                        ...editingStudentModal,
+                        grade: Number(e.target.value),
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold"
+                  >
+                    <option value={10}>Khối 10</option>
+                    <option value={11}>Khối 11</option>
+                    <option value={12}>Khối 12</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Năm học:</label>
+                  <select
+                    value={editingStudentModal.academicYear || selectedAcademicYear}
+                    onChange={(e) =>
+                      setEditingStudentModal({
+                        ...editingStudentModal,
+                        academicYear: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                  >
+                    {academicYears.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Email đăng nhập:</label>
+                  <input
+                    type="email"
+                    required
+                    value={editingStudentModal.email}
+                    onChange={(e) =>
+                      setEditingStudentModal({ ...editingStudentModal, email: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Mật khẩu:</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingStudentModal.password}
+                    onChange={(e) =>
+                      setEditingStudentModal({ ...editingStudentModal, password: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Điểm TB:</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="10"
+                    value={editingStudentModal.score}
+                    onChange={(e) =>
+                      setEditingStudentModal({
+                        ...editingStudentModal,
+                        score: Number(e.target.value),
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Điểm mục tiêu:</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="10"
+                    value={editingStudentModal.targetScore}
+                    onChange={(e) =>
+                      setEditingStudentModal({
+                        ...editingStudentModal,
+                        targetScore: Number(e.target.value),
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Chuyên cần (%):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={editingStudentModal.attendanceRate}
+                    onChange={(e) =>
+                      setEditingStudentModal({
+                        ...editingStudentModal,
+                        attendanceRate: Number(e.target.value),
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Trường ĐH mục tiêu:</label>
+                  <input
+                    type="text"
+                    value={editingStudentModal.universityGoal}
+                    onChange={(e) =>
+                      setEditingStudentModal({
+                        ...editingStudentModal,
+                        universityGoal: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-600 mb-1">Ghi chú chuyên cần:</label>
+                <input
+                  type="text"
+                  value={editingStudentModal.attendanceNote}
+                  onChange={(e) =>
+                    setEditingStudentModal({
+                      ...editingStudentModal,
+                      attendanceNote: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-600 mb-1">Thái độ học tập:</label>
+                <input
+                  type="text"
+                  value={editingStudentModal.attitude}
+                  onChange={(e) =>
+                    setEditingStudentModal({ ...editingStudentModal, attitude: e.target.value })
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-600 mb-1">
+                  Nhận xét học lực của Giáo viên:
+                </label>
+                <textarea
+                  rows={2}
+                  value={editingStudentModal.teacherComment}
+                  onChange={(e) =>
+                    setEditingStudentModal({
+                      ...editingStudentModal,
+                      teacherComment: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-[#E5E0D8] flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingStudentModal(null)}
+                  className="px-4 py-2 rounded-lg border border-[#D5CFC4] text-stone-600 font-semibold"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-lg bg-[#1B3B48] text-white font-bold hover:bg-[#2C4A3E]"
+                >
+                  ✓ Lưu Hồ Sơ Học Sinh
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 3: CHỈNH SỬA TÀI LIỆU KHO HỌC LIỆU (EDIT DOCUMENT)       */}
+      {/* ============================================================== */}
+      {editingDocModal && userRole === "teacher" && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#F7F6F2] border border-[#D5CFC4] rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#E5E0D8] pb-3 mb-4">
+              <h3 className="font-serif font-bold text-lg text-[#1B3B48]">
+                ✎ Chỉnh sửa Tài liệu Học tập
+              </h3>
+              <button
+                onClick={() => setEditingDocModal(null)}
+                className="text-stone-400 hover:text-stone-700 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveEditedDocument} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-stone-600 mb-1">Tên tài liệu:</label>
+                <input
+                  type="text"
+                  required
+                  value={editingDocModal.title}
+                  onChange={(e) =>
+                    setEditingDocModal({ ...editingDocModal, title: e.target.value })
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-bold"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Khối:</label>
+                  <select
+                    value={editingDocModal.grade}
+                    onChange={(e) =>
+                      setEditingDocModal({ ...editingDocModal, grade: Number(e.target.value) })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                  >
+                    <option value={10}>Khối 10</option>
+                    <option value={11}>Khối 11</option>
+                    <option value={12}>Khối 12</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Lớp:</label>
+                  <select
+                    value={editingDocModal.classId || "ALL"}
+                    onChange={(e) =>
+                      setEditingDocModal({ ...editingDocModal, classId: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                  >
+                    <option value="ALL">Mọi lớp</option>
+                    {classesList.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.id} - {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block font-bold text-stone-600 mb-1">Link tài liệu:</label>
+                <input
+                  type="url"
+                  value={editingDocModal.url}
+                  onChange={(e) =>
+                    setEditingDocModal({ ...editingDocModal, url: e.target.value })
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white"
+                />
+              </div>
+              <div className="pt-3 border-t border-[#E5E0D8] flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingDocModal(null)}
+                  className="px-4 py-2 rounded-lg border border-[#D5CFC4] text-stone-600"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-lg bg-[#1B3B48] text-white font-bold"
+                >
+                  Lưu thay đổi
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 4: ĐIỂM DANH LỚP HỌC & GỬI TÀI LIỆU BUỔI HỌC HÔM NAY     */}
+      {/* ============================================================== */}
+      {attendanceModalClass && userRole === "teacher" && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#F7F6F2] border border-[#D5CFC4] rounded-2xl max-w-3xl w-full p-6 shadow-2xl my-8">
+            <div className="flex items-center justify-between border-b border-[#E5E0D8] pb-3 mb-4">
+              <div>
+                <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-700 font-bold block">
+                  ĐIỂM DANH CA HỌC & TÀI LIỆU BUỔI HỌC
+                </span>
+                <h3 className="font-serif font-bold text-lg text-[#1B3B48]">
+                  ✓ Điểm danh Lớp {attendanceModalClass.id} — {attendanceModalClass.name}
                 </h3>
-                <p className="text-xs text-[#5C7667]">
-                  Phân chia lớp học, học sinh, tài liệu, bản tin và thành tích theo từng năm học.
-                </p>
               </div>
               <button
-                onClick={() => setShowYearManagerModal(false)}
-                className="text-xs font-bold text-[#5C7667]"
+                onClick={() => setAttendanceModalClass(null)}
+                className="text-stone-400 hover:text-stone-700 font-bold"
               >
-                ✕ Đóng
+                ✕
               </button>
             </div>
 
-            <form onSubmit={handleAddAcademicYear} className="flex gap-2">
-              <input
-                type="text"
-                required
-                value={newYearInput}
-                onChange={(e) => setNewYearInput(e.target.value)}
-                placeholder="Nhập năm học mới (VD: 2027 - 2028)"
-                className="flex-1 p-2.5 rounded-xl border text-xs"
-              />
-              <button
-                type="submit"
-                className="bg-[#1B3B48] text-white px-4 py-2.5 rounded-xl text-xs font-bold"
-              >
-                + Thêm Năm Học
-              </button>
-            </form>
+            <form onSubmit={handleSaveAttendanceSession} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[#EFECE6] p-4 rounded-xl border border-[#D5CFC4]">
+                <div>
+                  <label className="block font-bold text-stone-600 mb-1">Ngày điểm danh:</label>
+                  <input
+                    type="date"
+                    required
+                    value={attendanceDate}
+                    onChange={(e) => setAttendanceDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-mono"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-stone-600 mb-1">
+                    Nội dung bài học / Ca học đang diễn ra:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={attendanceLessonTitle}
+                    onChange={(e) => setAttendanceLessonTitle(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-white font-semibold"
+                  />
+                </div>
+              </div>
 
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {(appData.academicYears || DEFAULT_ACADEMIC_YEARS).map((y) => {
-                const isCurrent = appData.currentAcademicYear === y;
-                return (
-                  <div
-                    key={y}
-                    className="p-3 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] flex items-center justify-between text-xs"
-                  >
-                    <div className="font-bold text-[#1B3B48] flex items-center gap-2">
-                      <span>Năm học {y}</span>
-                      {isCurrent && (
-                        <span className="px-2 py-0.5 rounded bg-[#2C4A3E] text-white text-[10px]">
-                          Mặc định hiện tại
+              <div className="max-h-72 overflow-y-auto divide-y divide-stone-200 border border-[#D5CFC4] rounded-xl bg-white">
+                {attendanceDraftRecords.length === 0 ? (
+                  <p className="p-4 text-center text-stone-500 italic">
+                    Lớp này hiện chưa có học sinh nào.
+                  </p>
+                ) : (
+                  attendanceDraftRecords.map((rec, idx) => (
+                    <div
+                      key={rec.studentId}
+                      className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-stone-50"
+                    >
+                      <div>
+                        <span className="font-mono text-stone-400 mr-2">{idx + 1}.</span>
+                        <span className="font-bold text-[#1B3B48]">{rec.studentName}</span>
+                        <span className="font-mono text-[10px] text-stone-400 ml-1">
+                          ({rec.studentId})
                         </span>
-                      )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {(
+                          [
+                            ["present", "✓ Có mặt", "bg-emerald-600 text-white"],
+                            ["late", "⏰ Đi muộn", "bg-amber-500 text-white"],
+                            ["excused", "📩 Có phép", "bg-sky-600 text-white"],
+                            ["unexcused", "✕ Không phép", "bg-red-600 text-white"],
+                          ] as const
+                        ).map(([stKey, stLabel, activeCls]) => (
+                          <button
+                            key={stKey}
+                            type="button"
+                            onClick={() => {
+                              const next = [...attendanceDraftRecords];
+                              next[idx] = { ...next[idx], status: stKey };
+                              setAttendanceDraftRecords(next);
+                            }}
+                            className={`px-2.5 py-1 rounded text-[11px] font-bold ${
+                              rec.status === stKey
+                                ? activeCls
+                                : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                            }`}
+                          >
+                            {stLabel}
+                          </button>
+                        ))}
+                        <input
+                          type="text"
+                          placeholder="Ghi chú..."
+                          value={rec.note}
+                          onChange={(e) => {
+                            const next = [...attendanceDraftRecords];
+                            next[idx] = { ...next[idx], note: e.target.value };
+                            setAttendanceDraftRecords(next);
+                          }}
+                          className="px-2 py-1 rounded border border-stone-200 text-[11px] w-28"
+                        />
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {!isCurrent && (
-                        <button
-                          type="button"
-                          onClick={() => handleSetDefaultAcademicYear(y)}
-                          className="text-[#1B3B48] font-bold hover:underline"
-                        >
-                          Đặt làm mặc định
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedAcademicYear(y);
-                          setShowYearManagerModal(false);
-                        }}
-                        className="px-2.5 py-1 rounded bg-[#1B3B48] text-white font-bold"
-                      >
-                        Chọn xem
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+                  ))
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-[#E5E0D8] flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAttendanceModalClass(null)}
+                  className="px-4 py-2 rounded-lg border border-[#D5CFC4] text-stone-600 font-semibold"
+                >
+                  Đóng
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-700 text-white font-bold hover:bg-emerald-800 shadow-sm"
+                >
+                  ✓ Lưu Điểm Danh & Cập Nhật Chuyên Cần
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 5: QUẢN LÝ CLOUD FIREBASE, DỌN BỘ NHỚ & SAO LƯU JSON     */}
+      {/* ============================================================== */}
+      {showCloudModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#F7F6F2] border border-[#D5CFC4] rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E5E0D8] pb-3">
+              <div>
+                <span className="text-[10px] font-mono uppercase tracking-widest text-[#9C6644] font-bold block">
+                  CLOUD SYNC & ANTI-DATA-LOSS PROTECTION
+                </span>
+                <h3 className="font-serif font-bold text-lg text-[#1B3B48]">
+                  ☁ Quản lý Đồng bộ Firebase, Giải phóng Bộ nhớ & Sao lưu
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowCloudModal(false)}
+                className="text-stone-400 hover:text-stone-700 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3.5 rounded-xl bg-white border border-[#E5E0D8]">
+                <span className="font-bold text-[#1B3B48] block mb-1">
+                  🔗 Đường dẫn Firebase Realtime Database:
+                </span>
+                <input
+                  type="url"
+                  value={firebaseUrl}
+                  onChange={(e) => {
+                    setFirebaseUrl(e.target.value);
+                    localStorage.setItem("fb_url_nhatha_v8", e.target.value);
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border border-[#D5CFC4] bg-[#F7F6F2] font-mono text-[11px]"
+                />
+                <div className="flex items-center justify-between mt-2 text-[11px] text-stone-500">
+                  <span>
+                    Trạng thái:{" "}
+                    <b className="text-emerald-700">
+                      {cloudSyncStatus === "synced"
+                        ? "Đã đồng bộ an toàn"
+                        : cloudSyncStatus === "syncing"
+                        ? "Đang đồng bộ..."
+                        : cloudSyncStatus === "error"
+                        ? "Đang lưu cục bộ (Chờ mạng/Quota)"
+                        : "Sẵn sàng"}
+                    </b>
+                  </span>
+                  <span>Cập nhật lần cuối: {lastCloudSyncTime || "Vừa xong"}</span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-amber-50/90 border border-amber-300 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-amber-950">
+                    📊 Dung lượng dữ liệu hiện tại:
+                  </span>
+                  <span className="font-mono font-bold text-amber-900 px-2 py-0.5 rounded bg-amber-200/70">
+                    ~
+                    {Math.round(
+                      new Blob([
+                        JSON.stringify({
+                          classesList,
+                          students,
+                          documents,
+                          homeworks,
+                          homeworkSubmissions,
+                          examPapers,
+                        }),
+                      ]).size / 1024
+                    )}{" "}
+                    KB
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-900 leading-relaxed">
+                  Hệ thống đã kích hoạt <b>3 lớp bảo vệ</b>: Lưu bản nhẹ tức thì vào{" "}
+                  <code>localStorage</code> + Lưu toàn bộ vào <code>IndexedDB</code> + Kiểm tra{" "}
+                  <code>lastUpdatedTs</code> siêu nhẹ (15 bytes) giúp tiết kiệm 99% băng thông
+                  Firebase.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleCleanFirebaseStorage}
+                    className="px-3 py-2.5 rounded-xl bg-[#9C6644] text-white font-bold hover:bg-[#7d5035] shadow-sm text-center"
+                  >
+                    🧹 Dọn nhẹ tệp Base64 trên Firebase (Giữ nguyên Lớp & HS)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportBackupJSON}
+                    className="px-3 py-2.5 rounded-xl bg-[#2C4A3E] text-white font-bold hover:bg-[#1B3B48] shadow-sm text-center"
+                  >
+                    📦 Tải bản Sao lưu (.JSON) về máy
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap justify-between gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => fetchFromFirebase(false)}
+                  className="px-4 py-2 rounded-xl bg-[#EFECE6] text-[#1B3B48] font-bold hover:bg-[#E5E0D8]"
+                >
+                  🔄 Kiểm tra & Tải dữ liệu mới nhất từ Cloud
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    saveToAll();
+                    alert("✓ Đã lưu cưỡng bức toàn bộ dữ liệu lên Local, IndexedDB & Firebase!");
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#1B3B48] text-white font-bold hover:bg-[#2C4A3E]"
+                >
+                  ☁ Đẩy dữ liệu hiện tại lên Cloud ngay
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL ĐÍNH KÈM TÀI LIỆU HỌC HÔM NAY CHO LỚP HỌC */}
-      {editingClassDocsModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <form
-            onSubmit={handleSaveClassTodayMaterials}
-            className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-[#E2DFD7]"
-          >
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <h3 className="font-bold text-base text-[#1B3B48]">
-                  📎 Đính kèm Tài liệu học hôm nay — Lớp {editingClassDocsModal.id}
-                </h3>
-                <p className="text-xs text-[#5C7667]">
-                  Học sinh và Phụ huynh trong lớp sẽ thấy ngay tài liệu học hôm đó.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingClassDocsModal(null)}
-                className="text-xs font-bold text-[#5C7667]"
-              >
-                ✕ Đóng
-              </button>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <label className="block font-bold text-[#1B3B48]">
-                1. Chọn các tài liệu đã tải lên trong Kho tài liệu của Lớp/Chương:
-              </label>
-              <div className="max-h-40 overflow-y-auto space-y-1.5 p-2.5 rounded-xl bg-[#F7F6F2] border">
-                {(appData.documents || []).length === 0 ? (
-                  <p className="text-[#5C7667] italic">
-                    Kho tài liệu hiện đang trống.
-                  </p>
-                ) : (
-                  (appData.documents || []).map((d) => {
-                    const checked = (
-                      editingClassDocsModal.todayDocIds || []
-                    ).includes(d.id);
-                    return (
-                      <label
-                        key={d.id}
-                        className="flex items-center gap-2 cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            const prev =
-                              editingClassDocsModal.todayDocIds || [];
-                            const next = e.target.checked
-                              ? [...prev, d.id]
-                              : prev.filter((x) => x !== d.id);
-                            setEditingClassDocsModal({
-                              ...editingClassDocsModal,
-                              todayDocIds: next,
-                            });
-                          }}
-                        />
-                        <span className="font-semibold">
-                          [{d.classId}] {d.title} ({d.chapterTitle})
-                        </span>
-                      </label>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <label className="block font-bold text-[#1B3B48]">
-                2. Hoặc ghi nhanh tài liệu / link bài học hôm nay:
-              </label>
-              <input
-                type="text"
-                value={editingClassDocsModal.todayCustomDocTitle || ""}
-                onChange={(e) =>
-                  setEditingClassDocsModal({
-                    ...editingClassDocsModal,
-                    todayCustomDocTitle: e.target.value,
-                  })
-                }
-                placeholder="Tên tài liệu hôm nay (VD: Phiếu bài tập tốc độ phản ứng)..."
-                className="w-full p-2.5 rounded-xl border"
-              />
-              <input
-                type="text"
-                value={editingClassDocsModal.todayCustomDocUrl || ""}
-                onChange={(e) =>
-                  setEditingClassDocsModal({
-                    ...editingClassDocsModal,
-                    todayCustomDocUrl: e.target.value,
-                  })
-                }
-                placeholder="Link tài liệu (Google Drive / PDF)..."
-                className="w-full p-2.5 rounded-xl border"
-              />
-              <input
-                type="file"
-                onChange={(e) =>
-                  handleFlexibleFileUpload(e, (res) =>
-                    setEditingClassDocsModal((prev) => ({
-                      ...prev,
-                      todayCustomDocTitle:
-                        prev.todayCustomDocTitle || res.fileName,
-                      todayCustomDocFileName: res.fileName,
-                      todayCustomDocDataUrl: res.dataUrl,
-                    }))
-                  )
-                }
-                className="text-xs"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setEditingClassDocsModal(null)}
-                className="px-4 py-2 rounded-xl bg-gray-100 text-xs font-bold"
-              >
-                Hủy
-              </button>
-              <button
-                type="submit"
-                className="px-5 py-2 rounded-xl bg-[#1B3B48] text-white text-xs font-bold"
-              >
-                Lưu Tài Liệu Học Hôm Nay
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* MODAL ĐIỂM DANH NHANH & ĐÍNH KÈM TÀI LIỆU BUỔI HỌC HÔM ĐÓ */}
-      {attendanceModalClass && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <form
-            onSubmit={handleSaveAttendanceSession}
-            className="bg-white rounded-2xl max-w-3xl w-full p-6 space-y-4 shadow-xl max-h-[90vh] flex flex-col"
-          >
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="font-bold text-lg text-[#1B3B48]">
-                ✓ Điểm danh & Tài liệu Buổi học hôm nay — Lớp {attendanceModalClass.id}
+      {/* ============================================================== */}
+      {/* MODAL 6: XEM TRƯỚC & GỬI EMAIL THÔNG BÁO                       */}
+      {/* ============================================================== */}
+      {emailPreviewModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#F7F6F2] border border-[#D5CFC4] rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-3 text-xs">
+            <div className="flex items-center justify-between border-b border-[#E5E0D8] pb-2">
+              <h3 className="font-serif font-bold text-base text-[#1B3B48]">
+                ✉ Gửi Email Thông Báo Học Tập
               </h3>
               <button
-                type="button"
-                onClick={() => setAttendanceModalClass(null)}
-                className="text-xs font-bold text-[#5C7667]"
+                onClick={() => setEmailPreviewModal(null)}
+                className="text-stone-400 hover:text-stone-700 font-bold"
               >
-                ✕ Đóng
+                ✕
               </button>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-              <input
-                type="text"
-                required
-                value={sessionTopic}
-                onChange={(e) => setSessionTopic(e.target.value)}
-                placeholder="Chủ đề buổi học hôm nay..."
-                className="p-2.5 rounded-xl border"
-              />
-              <select
-                value={sessionDocId}
-                onChange={(e) => setSessionDocId(e.target.value)}
-                className="p-2.5 rounded-xl border bg-white font-semibold"
-              >
-                <option value="">-- Đính kèm TL từ Kho tài liệu --</option>
-                {(appData.documents || []).map((d) => (
-                  <option key={d.id} value={d.id}>
-                    [{d.classId}] {d.title}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="text"
-                value={sessionCustomDocTitle}
-                onChange={(e) => setSessionCustomDocTitle(e.target.value)}
-                placeholder="Hoặc ghi tên tài liệu buổi học hôm nay..."
-                className="p-2.5 rounded-xl border"
-              />
+            <div>
+              <span className="font-bold text-stone-600">Người nhận: </span>
+              <span className="font-mono text-[#1B3B48]">{emailPreviewModal.to}</span>
             </div>
-
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {appData.students
-                .filter((s) => s.classId === attendanceModalClass.id)
-                .map((st) => {
-                  const cur = sessionRecords[st.id] || {
-                    status: "PRESENT",
-                    attitude: "Chú ý nghe giảng, ghi chép bài đầy đủ",
-                  };
-                  return (
-                    <div
-                      key={st.id}
-                      className="p-3 rounded-xl bg-[#F7F6F2] border grid grid-cols-1 sm:grid-cols-12 gap-2 items-center text-xs"
-                    >
-                      <div className="sm:col-span-3 font-bold text-[#1B3B48]">
-                        {st.name}
-                      </div>
-                      <div className="sm:col-span-4">
-                        <select
-                          value={cur.status}
-                          onChange={(e) =>
-                            setSessionRecords({
-                              ...sessionRecords,
-                              [st.id]: { ...cur, status: e.target.value },
-                            })
-                          }
-                          className="w-full p-2 rounded-lg border bg-white font-semibold"
-                        >
-                          <option value="PRESENT">✅ Có mặt đầy đủ</option>
-                          <option value="LATE">🕒 Đi học muộn</option>
-                          <option value="EXCUSED">📩 Vắng có phép</option>
-                          <option value="ABSENT">❌ Vắng không phép</option>
-                        </select>
-                      </div>
-                      <div className="sm:col-span-5">
-                        <input
-                          type="text"
-                          value={cur.attitude}
-                          onChange={(e) =>
-                            setSessionRecords({
-                              ...sessionRecords,
-                              [st.id]: { ...cur, attitude: e.target.value },
-                            })
-                          }
-                          className="w-full p-2 rounded-lg border bg-white"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+            <div>
+              <span className="font-bold text-stone-600">Tiêu đề: </span>
+              <span className="font-semibold text-[#1B3B48]">{emailPreviewModal.subject}</span>
             </div>
-            <div className="flex justify-end gap-2 pt-3 border-t">
+            <pre className="p-3 rounded-xl bg-white border border-[#E5E0D8] whitespace-pre-wrap font-sans text-xs max-h-60 overflow-y-auto">
+              {emailPreviewModal.body}
+            </pre>
+            <div className="flex justify-end gap-2 pt-2">
               <button
-                type="submit"
-                className="px-5 py-2 rounded-xl bg-[#1B3B48] text-white text-xs font-bold"
-              >
-                Lưu Điểm danh & Tài liệu hôm nay
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-            {/* MODAL CẤU HÌNH & DỌN DUNG LƯỢNG ĐÁM MÂY FIREBASE */}
-      {showCloudModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-[#E2DFD7]">
-            <div className="flex justify-between items-center border-b pb-3">
-              <div>
-                <h3 className="font-bold text-base text-[#1B3B48]">
-                  ☁️ Quản lý Đám mây Firebase & Giải phóng Bộ nhớ
-                </h3>
-                <p className="text-xs text-[#5C7667]">
-                  Dung lượng gói dữ liệu hiện tại:{" "}
-                  <strong className="text-[#1B3B48]">
-                    {(JSON.stringify(appData).length / 1024).toFixed(1)} KB
-                  </strong>
-                </p>
-              </div>
-              <button
-                onClick={() => setShowCloudModal(false)}
-                className="text-xs font-bold text-[#5C7667]"
-              >
-                ✕ Đóng
-              </button>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-[#1B3B48]">
-                Đường dẫn Firebase Realtime Database:
-              </label>
-              <input
-                type="text"
-                value={tempFirebaseInput}
-                onChange={(e) => setTempFirebaseInput(e.target.value)}
-                placeholder="https://lophoaduonganhtuananh-37e47-default-rtdb.asia-southeast1.firebasedatabase.app"
-                className="w-full p-2.5 rounded-xl border text-xs font-mono"
-              />
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-[#F7F6F2] border border-[#E2DFD7] space-y-2.5 text-xs">
-              <div className="font-bold text-[#1B3B48]">
-                🛠️ Công cụ Chống tràn bộ nhớ & Bảo vệ dữ liệu:
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={handleCleanFirebaseStorage}
-                  className="px-3.5 py-2 rounded-xl bg-[#9C6644] hover:bg-[#7F5135] text-white font-bold transition"
-                >
-                  🧹 Dọn nhẹ tệp Base64 trên Firebase (Giữ nguyên Lớp & HS)
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportBackupJSON}
-                  className="px-3.5 py-2 rounded-xl bg-[#2C4A3E] hover:bg-[#1B3B48] text-[#E9C46A] font-bold transition"
-                >
-                  📦 Tải bản Sao lưu (.JSON) về máy
-                </button>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <button
-                type="button"
-                onClick={() => setShowCloudModal(false)}
-                className="px-4 py-2 rounded-xl bg-gray-100 text-xs font-bold"
+                onClick={() => setEmailPreviewModal(null)}
+                className="px-4 py-2 rounded-lg border border-[#D5CFC4]"
               >
                 Đóng
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const trimmed = tempFirebaseInput.trim();
-                  setFirebaseUrl(trimmed);
-                  safeSetStorage("data_nhatha_firebase_url", trimmed);
-                  setShowCloudModal(false);
-                  if (trimmed) saveToAll(appData);
-                }}
-                className="bg-[#1B3B48] text-[#E9C46A] px-4 py-2 rounded-xl text-xs font-bold"
-              >
-                Lưu & Đồng bộ ngay
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* MODAL XEM TRƯỚC & GỬI EMAIL */}
-      {emailPreviewModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-xl">
-            <div className="flex justify-between items-center border-b pb-3">
-              <div>
-                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded bg-[#1B3B48] text-[#E9C46A]">
-                  {emailPreviewModal.modeBadge || "Gửi Email"}
-                </span>
-                <h3 className="font-bold text-base text-[#1B3B48] mt-1">
-                  Nội dung Email gửi Phụ huynh & Học sinh
-                </h3>
-              </div>
-              <button
-                onClick={() => setEmailPreviewModal(null)}
-                className="text-xs font-bold"
-              >
-                ✕ Đóng
-              </button>
-            </div>
-            <div className="text-xs space-y-2 bg-[#F7F6F2] p-4 rounded-xl border">
-              <div>
-                <strong>Người nhận:</strong> {emailPreviewModal.to}
-              </div>
-              <div>
-                <strong>Tiêu đề:</strong> {emailPreviewModal.subject}
-              </div>
-              <pre className="whitespace-pre-wrap font-sans text-xs pt-2 border-t max-h-60 overflow-y-auto">
-                {emailPreviewModal.body}
-              </pre>
-            </div>
-            <div className="flex justify-end gap-2">
               <a
-                href={emailPreviewModal.mailtoUrl}
-                className="bg-[#1B3B48] text-white px-4 py-2 rounded-xl text-xs font-bold"
+                href={`mailto:${emailPreviewModal.to}?subject=${encodeURIComponent(
+                  emailPreviewModal.subject
+                )}&body=${encodeURIComponent(emailPreviewModal.body)}`}
+                className="px-4 py-2 rounded-lg bg-[#1B3B48] text-white font-bold"
               >
-                Mở ứng dụng Mail để gửi ngay
+                🚀 Mở Ứng dụng Mail để Gửi
               </a>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL XEM TRỰC TIẾP ẢNH / BÀI LÀM HỌC SINH NỘP */}
-      {previewSubmissionModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <span className="px-2.5 py-0.5 rounded bg-[#1B3B48] text-[#E9C46A] text-xs font-bold">
-                  Bài nộp của HS: {previewSubmissionModal.studentName} (Lớp{" "}
-                  {previewSubmissionModal.classId})
-                </span>
-                <h3 className="font-bold text-base text-[#1B3B48] mt-1">
-                  {previewSubmissionModal.homeworkTitle}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPreviewSubmissionModal(null)}
-                className="text-xs font-bold text-[#5C7667]"
-              >
-                ✕ Đóng
-              </button>
-            </div>
-
-            {previewSubmissionModal.studentNote && (
-              <div className="p-3 rounded-xl bg-[#F7F6F2] border text-xs">
-                <strong>Ghi chú của học sinh:</strong>{" "}
-                {previewSubmissionModal.studentNote}
-              </div>
-            )}
-
-            {previewSubmissionModal.fileDataUrl && (
-              <div className="rounded-xl overflow-hidden border border-[#E2DFD7] bg-[#F7F6F2] p-2 flex justify-center">
-                <img
-                  src={previewSubmissionModal.fileDataUrl}
-                  alt={previewSubmissionModal.fileName || "Bài làm học sinh"}
-                  className="max-w-full h-auto max-h-[60vh] object-contain rounded-lg"
-                />
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2">
-              {previewSubmissionModal.fileDataUrl && (
-                <a
-                  href={previewSubmissionModal.fileDataUrl}
-                  download={previewSubmissionModal.fileName || "bailam_hs"}
-                  className="px-4 py-2 rounded-xl bg-[#5C7667] text-white text-xs font-bold"
-                >
-                  ⬇ Tải tệp về máy
-                </a>
-              )}
-              <button
-                type="button"
-                onClick={() => setPreviewSubmissionModal(null)}
-                className="px-4 py-2 rounded-xl bg-[#1B3B48] text-white text-xs font-bold"
-              >
-                Đóng cửa sổ
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* FOOTER */}
-      <footer className="bg-[#EFECE6] border-t border-[#DFDBD0] py-5 px-4 mt-auto">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#5C7667]">
+      <footer className="border-t border-[#E5E0D8] bg-[#EFECE6] py-6 px-6 mt-12 text-center text-xs text-stone-500">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <div>
-            <strong className="text-[#1B3B48]">{TEACHER_INFO.fullName}</strong>{" "}
-            • {TEACHER_INFO.subNote} • Email: {TEACHER_INFO.email}
+            <strong className="text-[#1B3B48] font-serif">{TEACHER_INFO.brandTitle}</strong> — Giáo
+            viên: <b>{TEACHER_INFO.fullName}</b> ({TEACHER_INFO.subNote})
           </div>
-          <div className="font-semibold text-[#1B3B48]">
-            HỆ THỐNG LỚP HỌC HÓA HỌC 10 • 11 • 12 (CTGDPT 2018) • NĂM HỌC{" "}
-            {selectedAcademicYear === "ALL"
-              ? "TẤT CẢ"
-              : selectedAcademicYear}
+          <div className="font-mono text-[11px]">
+            Chuẩn Danh pháp Quốc tế IUPAC (GDPT 2018) • Bảo vệ dữ liệu 3 lớp (Local + IndexedDB +
+            Smart Firebase)
           </div>
         </div>
       </footer>
     </div>
   );
 }
+
